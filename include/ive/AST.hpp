@@ -12,6 +12,7 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Casting.h>
+#include <memory>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -37,6 +38,7 @@ public:
     Expr_BinOp,
     Expr_Call,
     Expr_Print,
+    Expr_If,
   };
 
   ExprAST(ExprASTKind kind, Location location)
@@ -206,6 +208,26 @@ public:
 
   /// LLVM style RTTI
   static bool classof(const ExprAST *c) { return c->getKind() == Expr_Print; }
+};
+
+class IfExprAST : public ExprAST {
+  std::unique_ptr<ExprAST> ifExpr;
+  std::unique_ptr<ExprASTList> thenBlock;
+  std::unique_ptr<ExprASTList> elseBlock;
+
+public:
+  IfExprAST(Location loc, std::unique_ptr<ExprAST> ifExpr,
+        std::unique_ptr<ExprASTList> thenBlock,
+        std::unique_ptr<ExprASTList> elseBlock)
+      : ExprAST(Expr_If, std::move(loc)), ifExpr(std::move(ifExpr)),
+        thenBlock(std::move(thenBlock)), elseBlock(std::move(elseBlock)) {}
+
+  ExprAST *getIfExpr() { return ifExpr.get(); }
+  ExprASTList *getThen() { return thenBlock.get(); }
+  ExprASTList *getElse() { return elseBlock.get(); }
+
+  /// LLVM style RTTI
+  static bool classof(const ExprAST *c) { return c->getKind() == Expr_If; }
 };
 
 /// This class represents the "prototype" for a function, which captures its

@@ -37,10 +37,12 @@ enum Token : int {
   tok_var = -3,
   tok_def = -4,
   tok_struct = -5,
+  tok_if = -6,
+  tok_else = -7,
 
   // primary
-  tok_identifier = -6,
-  tok_number = -7,
+  tok_identifier = -8,
+  tok_number = -9,
 };
 
 /// The Lexer is an abstract base class providing all the facilities that the

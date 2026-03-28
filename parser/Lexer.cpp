@@ -81,6 +81,13 @@ Token Lexer::getTok() {
     if (m_identifierStr == "var") {
       return tok_var;
     }
+    if(m_identifierStr == "if") {
+      return tok_if;
+    }
+    if(m_identifierStr == "else") {
+      return tok_else;
+    }
+
     return tok_identifier;
   }
 

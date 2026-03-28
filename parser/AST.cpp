@@ -45,6 +45,7 @@ private:
   void dump(BinaryExprAST *node);
   void dump(CallExprAST *node);
   void dump(PrintExprAST *node);
+  void dump(IfExprAST *node);
   void dump(PrototypeAST *node);
   void dump(FunctionAST *node);
   void dump(StructAST *node);
@@ -78,7 +79,7 @@ void ASTDumper::dump(ExprAST *expr) {
   llvm::TypeSwitch<ExprAST *>(expr)
       .Case<BinaryExprAST, CallExprAST, LiteralExprAST, NumberExprAST,
             PrintExprAST, ReturnExprAST, StructLiteralExprAST, VarDeclExprAST,
-            VariableExprAST>([&](auto *node) { this->dump(node); })
+            VariableExprAST, IfExprAST>([&](auto *node) { this->dump(node); })
       .Default([&](ExprAST *) {
         // No match, fallback to a generic message
         INDENT();
@@ -209,6 +210,17 @@ void ASTDumper::dump(const VarType &type) {
   else
     llvm::interleaveComma(type.shape, llvm::errs());
   llvm::errs() << ">";
+}
+
+void ASTDumper::dump(IfExprAST *node) {
+  INDENT();
+  llvm::errs() << "IfExpr: " << loc(node) << "\n";
+  dump(node->getIfExpr());
+  dump(node->getThen());
+  auto elseBlock = node->getElse();
+  if(elseBlock) {
+    dump(node->getElse());
+  }
 }
 
 /// Print a function prototype, first the function name, and then the list of

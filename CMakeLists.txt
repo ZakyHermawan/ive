@@ -8,6 +8,7 @@ set(CMAKE_CXX_STANDARD 17 CACHE STRING "C++ standard to conform to")
 
 set(EXTERNAL_PROJECT_BUILD FALSE)
 find_package(MLIR REQUIRED CONFIG)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(NO_RTTI "-fno-rtti")
 add_definitions(${NO_RTTI})
@@ -28,7 +29,6 @@ list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
 # include(TableGen)
 include(AddLLVM)
 include(AddMLIR)
-# include(HandleLLVMOptions)
 
 set(IVE_SOURCE_DIR ${PROJECT_SOURCE_DIR})
 set(IVE_BINARY_DIR ${PROJECT_BINARY_DIR})

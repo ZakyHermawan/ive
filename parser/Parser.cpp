@@ -1,5 +1,6 @@
 #include "ive/Parser.hpp"
 #include "ive/AST.hpp"
+#include "ive/Lexer.hpp"
 
 #include <memory>
 
@@ -413,6 +414,7 @@ std::unique_ptr<ExprASTList> Parser::parseBlock() {
   while (m_lexer.getCurrToken() == ';')
     m_lexer.consume(Token(';'));
 
+  bool shouldEndsWithSemiColon = true;
   while (m_lexer.getCurrToken() != '}' && m_lexer.getCurrToken() != tok_eof) {
     if (m_lexer.getCurrToken() == tok_identifier) {
       // Variable declaration or call
@@ -432,6 +434,14 @@ std::unique_ptr<ExprASTList> Parser::parseBlock() {
       if (!ret)
         return nullptr;
       exprList->push_back(std::move(ret));
+    }
+    else if (m_lexer.getCurrToken() == tok_if) {
+      shouldEndsWithSemiColon = false;
+      auto ifExpr = parseIfExpr();
+      if(!ifExpr) {
+        return nullptr;
+      }
+      exprList->push_back(std::move(ifExpr));
     } else {
       // General expression
       auto expr = parseExpression();
@@ -440,7 +450,7 @@ std::unique_ptr<ExprASTList> Parser::parseBlock() {
       exprList->push_back(std::move(expr));
     }
     // Ensure that elements are separated by a semicolon.
-    if (m_lexer.getCurrToken() != ';')
+    if (m_lexer.getCurrToken() != ';' && shouldEndsWithSemiColon)
       return parseError<ExprASTList>(";", "after expression");
 
     // Ignore empty expressions: swallow sequences of semicolons.
@@ -553,6 +563,27 @@ std::unique_ptr<StructAST> Parser::parseStruct() {
   // Parse: '}'
   m_lexer.consume(Token('}'));
   return std::make_unique<StructAST>(loc, name, std::move(decls));
+}
+
+std::unique_ptr<ExprAST> Parser::parseIfExpr() {
+  auto loc = m_lexer.getLastLocation();
+  m_lexer.consume(tok_if);
+  
+  auto ifExpr = parseExpression();
+  if (!ifExpr) {
+    return parseError<IfExprAST>("expression", "for if statement");
+  }
+
+  auto thenBlock = parseBlock();
+  std::unique_ptr<ExprASTList> elseBlock = nullptr;
+
+  if(m_lexer.getCurrToken() == tok_else) {
+    m_lexer.consume(tok_else);
+    elseBlock = parseBlock();
+  }
+
+  return std::make_unique<IfExprAST>(
+      loc, std::move(ifExpr), std::move(thenBlock), std::move(elseBlock));
 }
 
 int Parser::getTokPrecedence() {

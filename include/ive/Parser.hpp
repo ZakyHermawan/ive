@@ -14,10 +14,7 @@
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/Support/raw_ostream.h>
 
-#include <map>
-#include <optional>
-#include <utility>
-#include <vector>
+#include <memory>
 
 namespace ive {
 
@@ -131,6 +128,8 @@ private:
   ///
   /// definition ::= `struct` identifier `{` decl+ `}`
   std::unique_ptr<StructAST> parseStruct();
+
+  std::unique_ptr<ExprAST> parseIfExpr();
 
   /// Get the precedence of the pending binary operator token.
   int getTokPrecedence();
