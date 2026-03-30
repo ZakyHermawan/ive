@@ -434,11 +434,10 @@ std::unique_ptr<ExprASTList> Parser::parseBlock() {
       if (!ret)
         return nullptr;
       exprList->push_back(std::move(ret));
-    }
-    else if (m_lexer.getCurrToken() == tok_if) {
+    } else if (m_lexer.getCurrToken() == tok_if) {
       shouldEndsWithSemiColon = false;
       auto ifExpr = parseIfExpr();
-      if(!ifExpr) {
+      if (!ifExpr) {
         return nullptr;
       }
       exprList->push_back(std::move(ifExpr));
@@ -568,7 +567,7 @@ std::unique_ptr<StructAST> Parser::parseStruct() {
 std::unique_ptr<ExprAST> Parser::parseIfExpr() {
   auto loc = m_lexer.getLastLocation();
   m_lexer.consume(tok_if);
-  
+
   auto ifExpr = parseExpression();
   if (!ifExpr) {
     return parseError<IfExprAST>("expression", "for if statement");
@@ -577,7 +576,7 @@ std::unique_ptr<ExprAST> Parser::parseIfExpr() {
   auto thenBlock = parseBlock();
   std::unique_ptr<ExprASTList> elseBlock = nullptr;
 
-  if(m_lexer.getCurrToken() == tok_else) {
+  if (m_lexer.getCurrToken() == tok_else) {
     m_lexer.consume(tok_else);
     elseBlock = parseBlock();
   }

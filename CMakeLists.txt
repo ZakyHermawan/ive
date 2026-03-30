@@ -8,7 +8,12 @@ set(CMAKE_CXX_STANDARD 17 CACHE STRING "C++ standard to conform to")
 
 set(EXTERNAL_PROJECT_BUILD FALSE)
 find_package(MLIR REQUIRED CONFIG)
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Use mold as the linker if available
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=mold")
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=mold")
 
 set(NO_RTTI "-fno-rtti")
 add_definitions(${NO_RTTI})

@@ -9,6 +9,8 @@
 #include "ive/AST.hpp"
 #include "ive/Dialect.hpp"
 #include "ive/Lexer.hpp"
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Diagnostics.h>
@@ -32,8 +34,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
-#include <numeric>
 #include <optional>
 #include <tuple>
 #include <utility>
@@ -164,6 +164,68 @@ private:
     return mlir::success();
   }
 
+  mlir::LogicalResult mlirGen(IfExprAST &ifExpr) {
+    auto location = loc(ifExpr.loc());
+    auto cond = mlirGen(*ifExpr.getCond());
+    if (!cond) {
+      return mlir::emitError(
+          location, "error: if expression need a conditional statement");
+    }
+
+    auto thenExpr = ifExpr.getThen();
+    auto elseExpr = ifExpr.getElse();
+
+    if (!thenExpr) {
+      return mlir::emitError(location,
+                             "error: if expression need a then block");
+    }
+
+    mlir::ive::IfOp ifOp;
+    if (elseExpr && !elseExpr->empty()) {
+      ifOp = mlir::ive::IfOp::create(builder, location, cond, true, true);
+    } else {
+      ifOp = mlir::ive::IfOp::create(builder, location, cond, true, false);
+    }
+
+    auto *thenBlock = &ifOp.getThenRegion().back();
+    builder.setInsertionPointToStart(thenBlock);
+    if (mlir::failed(mlirGen(*ifExpr.getThen()))) {
+      return mlir::failure();
+    }
+    // Only insert ive.yield if needed
+    if (thenBlock->empty() ||
+        !thenBlock->back().hasTrait<mlir::OpTrait::IsTerminator>()) {
+      builder.setInsertionPointToEnd(thenBlock);
+      mlir::ive::YieldOp::create(builder, location);
+    }
+    if (elseExpr && !elseExpr->empty()) {
+      auto *elseBlock = &ifOp.getElseRegion().back();
+      builder.setInsertionPointToStart(elseBlock);
+      if (mlir::failed(mlirGen(*elseExpr))) {
+        return mlir::failure();
+      }
+      // Only insert ive.yield if needed
+      if (elseBlock->empty() ||
+          !elseBlock->back().hasTrait<mlir::OpTrait::IsTerminator>()) {
+        builder.setInsertionPointToEnd(elseBlock);
+        mlir::ive::YieldOp::create(builder, location);
+      }
+    }
+    // Do NOT insert a yield in the parent block after the if/else.
+    return mlir::success();
+
+    // if (auto elseExpr = ifExpr.getElse()) {
+    //   auto *elseBlock = &ifOp.getElseRegion().back();
+    //   builder.setInsertionPointToStart(elseBlock);
+    //   if (mlir::failed(mlirGen(*elseExpr))) {
+    //     return mlir::failure();
+    //   }
+    //   builder.setInsertionPointToEnd(elseBlock);
+    //   mlir::ive::YieldOp::create(builder, location);
+    // }
+    return mlir::success();
+  }
+
   /// Create the prototype for an MLIR function with as many arguments as the
   /// provided Ive AST prototype.
   mlir::ive::FuncOp mlirGen(PrototypeAST &proto) {
@@ -235,7 +297,6 @@ private:
     // If this function isn't main, then set the visibility to private.
     if (funcAST.getProto()->getName() != "main")
       function.setPrivate();
-
     return function;
   }
 
@@ -627,27 +688,44 @@ private:
   /// Codegen a list of expression, return failure if one of them hit an error.
   llvm::LogicalResult mlirGen(ExprASTList &blockAST) {
     SymbolTableScopeT varScope(symbolTable);
-    for (auto &expr : blockAST) {
-      // Specific handling for variable declarations, return statement, and
-      // print. These can only appear in block list and not in nested
-      // expressions.
+    for (auto it = blockAST.begin(); it != blockAST.end(); ++it) {
+      auto &expr = *it;
+      // Variable declarations
       if (auto *vardecl = dyn_cast<VarDeclExprAST>(expr.get())) {
         if (!mlirGen(*vardecl))
           return mlir::failure();
         continue;
       }
-      if (auto *ret = dyn_cast<ReturnExprAST>(expr.get()))
-        return mlirGen(*ret);
+      // Return statement: only emit if this is the last statement in the block
+      if (auto *ret = dyn_cast<ReturnExprAST>(expr.get())) {
+        // Only emit return if this is the last statement in the block
+        if (std::next(it) == blockAST.end())
+          return mlirGen(*ret);
+        else
+          continue;
+      }
+      // Print statement
       if (auto *print = dyn_cast<PrintExprAST>(expr.get())) {
         if (mlir::failed(mlirGen(*print)))
           return mlir::success();
         continue;
       }
-
+      // If statement
+      if (auto *ifExpr = dyn_cast<IfExprAST>(expr.get())) {
+        // Save parent block before entering the if/else regions
+        auto *parentBlock = builder.getInsertionBlock();
+        if (mlir::failed(mlirGen(*ifExpr)))
+          return mlir::failure();
+        // Restore insertion point to parent block after if/else
+        builder.setInsertionPointToEnd(parentBlock);
+        continue;
+      }
       // Generic expression dispatch codegen.
       if (!mlirGen(*expr))
         return mlir::failure();
     }
+    // Do not emit a terminator (yield/return) here; let the parent (if/else or
+    // function) handle it.
     return mlir::success();
   }
 

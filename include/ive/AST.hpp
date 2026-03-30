@@ -211,18 +211,18 @@ public:
 };
 
 class IfExprAST : public ExprAST {
-  std::unique_ptr<ExprAST> ifExpr;
+  std::unique_ptr<ExprAST> cond;
   std::unique_ptr<ExprASTList> thenBlock;
   std::unique_ptr<ExprASTList> elseBlock;
 
 public:
-  IfExprAST(Location loc, std::unique_ptr<ExprAST> ifExpr,
-        std::unique_ptr<ExprASTList> thenBlock,
-        std::unique_ptr<ExprASTList> elseBlock)
-      : ExprAST(Expr_If, std::move(loc)), ifExpr(std::move(ifExpr)),
-        thenBlock(std::move(thenBlock)), elseBlock(std::move(elseBlock)) {}
+  IfExprAST(Location loc, std::unique_ptr<ExprAST> cond,
+            std::unique_ptr<ExprASTList> thenBlock_,
+            std::unique_ptr<ExprASTList> elseBlock_)
+      : ExprAST(Expr_If, std::move(loc)), cond(std::move(cond)),
+        thenBlock(std::move(thenBlock_)), elseBlock(std::move(elseBlock_)) {}
 
-  ExprAST *getIfExpr() { return ifExpr.get(); }
+  ExprAST *getCond() { return cond.get(); }
   ExprASTList *getThen() { return thenBlock.get(); }
   ExprASTList *getElse() { return elseBlock.get(); }
 

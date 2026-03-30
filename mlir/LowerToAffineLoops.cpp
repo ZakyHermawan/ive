@@ -23,7 +23,6 @@
 #include <llvm/ADT/Sequence.h>
 #include <llvm/Support/Casting.h>
 
-#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -340,9 +339,9 @@ void IveToAffineLoweringPass::runOnOperation() {
   // Now that the conversion target has been defined, we just need to provide
   // the set of patterns that will lower the Ive operations.
   RewritePatternSet patterns(&getContext());
-  patterns.add<AddOpLowering, SubOpLowering, ConstantOpLowering, FuncOpLowering, MulOpLowering, DivOpLowering,
-               PrintOpLowering, ReturnOpLowering, TransposeOpLowering>(
-      &getContext());
+  patterns.add<AddOpLowering, SubOpLowering, ConstantOpLowering, FuncOpLowering,
+               MulOpLowering, DivOpLowering, PrintOpLowering, ReturnOpLowering,
+               TransposeOpLowering>(&getContext());
 
   // With the target and rewrite patterns defined, we can now attempt the
   // conversion. The conversion will signal failure if any of our `illegal`

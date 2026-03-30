@@ -214,6 +214,7 @@ def FuncOp : Ive_Op<"func", [
     "StringRef":$name, "FunctionType":$type,
     CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)
   >];
+
   let extraClassDeclaration = [{
     //===------------------------------------------------------------------===//
     // FunctionOpInterface Methods
@@ -320,7 +321,7 @@ def DivOp : Ive_Op<"div",
   // Indicate that the operation has a custom parser and printer method.
   let hasCustomAssemblyFormat = 1;
 
-  // Allow building an SubOp with from the two input operands.
+  // Allow building an DivOp with from the two input operands.
   let builders = [
     OpBuilder<(ins "Value":$lhs, "Value":$rhs)>
   ];
@@ -414,6 +415,43 @@ def ReturnOp : Ive_Op<"return", [Pure, HasParent<"FuncOp">,
 
   // Indicate that additional verification for this operation is necessary.
   let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// IfOp
+//===----------------------------------------------------------------------===//
+
+def IfOp : Ive_Op<"if", [RecursiveMemoryEffects, NoRegionArguments, SingleBlock]> {
+  let summary = "if operation";
+  let description = [{
+    Represents an if construct. Executes `then` region if the condition is true,
+    otherwise executes `else` region.
+  }];
+
+  let arguments = (ins F64Tensor:$condition);
+  let regions = (region SizedRegion<1>:$thenRegion,
+                        MaxSizedRegion<1>:$elseRegion);
+
+  let builders = [
+    OpBuilder<(ins "Value":$cond, "bool":$withThenBlock, "bool":$withElseBlock)>
+  ];
+
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// YieldOp
+//===----------------------------------------------------------------------===//
+
+def YieldOp : Ive_Op<"yield", [Pure, Terminator, HasParent<"IfOp">]> {
+  let summary = "termination operation";
+  let description = [{
+    Currently, just to terminate IfOp and not doing anything else
+  }];
+
+  let arguments = (ins);
+  let results = (outs);
 }
 
 //===----------------------------------------------------------------------===//

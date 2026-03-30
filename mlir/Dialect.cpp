@@ -6,6 +6,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "ive/Dialect.hpp"
+#include "llvm/Support/LogicalResult.h"
+#include "ive/ShapeInferenceInterface.hpp"
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/Hashing.h>
@@ -441,7 +443,8 @@ llvm::LogicalResult DivOp::verify() {
   // if (auto constOp = llvm::dyn_cast_or_null<ConstantOp>(rhsOp)) {
   //   // Extract the constant value
   //   auto constAttr = constOp.getValue();
-  //   if (auto denseAttr = llvm::dyn_cast<mlir::DenseElementsAttr>(constAttr)) {
+  //   if (auto denseAttr = llvm::dyn_cast<mlir::DenseElementsAttr>(constAttr))
+  //   {
   //     if (denseAttr.isSplat()) {
   //       auto splatValue = denseAttr.getSplatValue<mlir::FloatAttr>();
   //       if (splatValue.getValue() == 0.0) {
@@ -456,7 +459,6 @@ llvm::LogicalResult DivOp::verify() {
 /// Infer the output shape of the DivOp, this is required by the shape inference
 /// interface.
 void DivOp::inferShapes() { getResult().setType(getLhs().getType()); }
-
 
 //===----------------------------------------------------------------------===//
 // ReturnOp
@@ -497,12 +499,52 @@ llvm::LogicalResult ReturnOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// IfOp
+//===----------------------------------------------------------------------===//
+void IfOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
+                 mlir::Value cond, bool withThenBlock, bool withElseBlock) {
+  assert((!withElseBlock || withThenBlock) &&
+         "must not create else block w/o then block");
+  state.addOperands(cond);
+
+  // Add regions and blocks.
+  OpBuilder::InsertionGuard guard(builder);
+  Region *thenRegion = state.addRegion();
+  if (withThenBlock) {
+    builder.createBlock(thenRegion);
+  }
+  Region *elseRegion = state.addRegion();
+  if (withElseBlock) {
+    builder.createBlock(elseRegion);
+  }
+}
+
+mlir::ParseResult IfOp::parse(mlir::OpAsmParser &parser,
+                              mlir::OperationState &result) {
+  return success();
+}
+
+void IfOp::print(mlir::OpAsmPrinter &printer) {
+  printer << " " << getOperation()->getOperand(0);
+  // Print optional attributes (if any, except the default ones)
+  printer.printOptionalAttrDict((*this)->getAttrs());
+  printer << " ";
+  printer.printRegion(getThenRegion(), /*printEntryBlockArgs=*/false);
+  if (!getElseRegion().empty()) {
+    printer << " else ";
+    printer.printRegion(getElseRegion(), /*printEntryBlockArgs=*/false);
+  }
+}
+
+llvm::LogicalResult IfOp::verify() { return mlir::success(); }
+
+//===----------------------------------------------------------------------===//
 // StructAccessOp
 //===----------------------------------------------------------------------===//
 
 void StructAccessOp::build(mlir::OpBuilder &b, mlir::OperationState &state,
                            mlir::Value input, size_t index) {
-  // Extract the result type from the input type.
+  // Extract the state type from the input type.
   StructType structTy = llvm::cast<StructType>(input.getType());
   assert(index < structTy.getNumElementTypes());
   mlir::Type resultType = structTy.getElementTypes()[index];

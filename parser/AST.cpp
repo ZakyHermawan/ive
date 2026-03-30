@@ -215,10 +215,10 @@ void ASTDumper::dump(const VarType &type) {
 void ASTDumper::dump(IfExprAST *node) {
   INDENT();
   llvm::errs() << "IfExpr: " << loc(node) << "\n";
-  dump(node->getIfExpr());
+  dump(node->getCond());
   dump(node->getThen());
   auto elseBlock = node->getElse();
-  if(elseBlock) {
+  if (elseBlock) {
     dump(node->getElse());
   }
 }
