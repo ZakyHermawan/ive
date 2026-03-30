@@ -1,10 +1,10 @@
-# IVE Programming Language
+# Ive Programming Language
 
 MLIR-based programming language, optimized for DSP and ML workloads.
 
 ## Overview
 
-IVE is a domain-specific language built on top of MLIR (Multi-Level Intermediate Representation) that provides high-level abstracts for tensor operations, automatic differentiation, and optimization for digital signal processing and machine learning applications.
+Ive is a domain-specific language built on top of MLIR (Multi-Level Intermediate Representation) that provides high-level abstracts for tensor operations, automatic differentiation, and optimization for digital signal processing and machine learning applications.
 
 ## Features
 
@@ -51,7 +51,7 @@ cmake --build build
 ### Command Line Options
 
 #### Input Type (`-x`)
-- `ive` (default): Load input file as IVE source code
+- `ive` (default): Load input file as ive source code
 - `mlir`: Load input file as MLIR IR
 
 #### Output Format (`-emit`)
