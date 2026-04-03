@@ -1,0 +1,89 @@
+#include "IveToSCF.hpp"
+
+#include "ive/Dialect.hpp"
+#include "mlir/Transforms/DialectConversion.h"  // from @llvm-project
+
+namespace mlir {
+namespace ive {
+
+#define GEN_PASS_DEF_IVETOSCF
+#include "IveToSCF.hpp.inc"
+
+class IveToSCFTypeConverter : public TypeConverter {
+public:
+  IveToSCFTypeConverter(MLIRContext *context) {
+    addConversion([](Type type) { return type; });
+  }
+};
+
+struct ConvertYield : public OpRewritePattern<YieldOp> {
+  ConvertYield(MLIRContext *context)
+    : OpRewritePattern<YieldOp>(context) {}
+
+  LogicalResult matchAndRewrite(
+    YieldOp yieldOp, PatternRewriter &rewriter) const override {
+      rewriter.replaceOpWithNewOp<scf::YieldOp>(yieldOp);
+      return success();
+    }
+};
+
+struct ConvertIf : public OpConversionPattern<IfOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult matchAndRewrite(
+    IfOp ifOp, OpAdaptor opAdaptor,
+    ConversionPatternRewriter &rewriter) const override {
+      Location loc = ifOp.getLoc();
+      Value conditionTensor = opAdaptor.getCondition();
+
+      Value element = tensor::ExtractOp::create(rewriter, loc, conditionTensor, ValueRange{});
+      Value zero = arith::ConstantFloatOp::create(rewriter, loc, rewriter.getF64Type(), llvm::APFloat(0.0));
+
+      auto cmp = arith::CmpFOp::create(
+          rewriter, loc, arith::CmpFPredicate::UNE, element, zero);
+      Value condition = cmp.getResult();
+
+      bool hasElseRegion = !ifOp.getElseRegion().empty();
+      auto scfIf = scf::IfOp::create(rewriter, loc, condition, hasElseRegion);
+
+      Block *srcThen = &ifOp.getThenRegion().front();
+      Block *dstThen = &scfIf.getThenRegion().front();
+      rewriter.eraseOp(dstThen->getTerminator());
+      rewriter.inlineBlockBefore(srcThen, dstThen, dstThen->end());
+
+      if (hasElseRegion) {
+        Block *srcElse = &ifOp.getElseRegion().front();
+        Block *dstElse = &scfIf.getElseRegion().front();
+        rewriter.eraseOp(dstElse->getTerminator());
+        rewriter.inlineBlockBefore(srcElse, dstElse, dstElse->end());
+      }
+
+      rewriter.eraseOp(ifOp);
+      return success();
+    }
+};
+
+struct IveToSCF : impl::IveToSCFBase<IveToSCF> {
+  using IveToSCFBase::IveToSCFBase;
+
+  void runOnOperation() override {
+    MLIRContext *context = &getContext();
+    auto *module = getOperation();
+    ConversionTarget target(*context);
+    // Convert ive.if and ive.yield, keep all other ops legal for this pass.
+    target.addIllegalOp<IfOp, YieldOp>();
+    target.markUnknownOpDynamicallyLegal([](Operation *) { return true; });
+
+    RewritePatternSet patterns(context);
+    IveToSCFTypeConverter typeConverter(context);
+    patterns.add<ConvertIf>(typeConverter, context);
+    patterns.add<ConvertYield>(context);
+
+    if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
+      signalPassFailure();
+    }
+  }
+};
+
+}  // namespace ive
+}  // namespace mlir

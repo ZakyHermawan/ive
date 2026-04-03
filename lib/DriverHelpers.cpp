@@ -5,6 +5,7 @@
 #include "ive/MLIRGen.hpp"
 #include "ive/Parser.hpp"
 #include "ive/Passes.hpp"
+#include "IveToSCF.hpp"
 
 #include <mlir/Dialect/Affine/Transforms/Passes.h>
 #include <mlir/Dialect/LLVMIR/Transforms/Passes.h>
@@ -84,6 +85,7 @@ int loadAndProcessMLIR(mlir::MLIRContext &context,
     return error;
   }
 
+  mlir::ive::registerIveToSCFPass();
   mlir::PassManager pm(module.get()->getName());
   if (mlir::failed(mlir::applyPassManagerCLOptions(pm)))
     return 4;
@@ -101,6 +103,7 @@ int loadAndProcessMLIR(mlir::MLIRContext &context,
     optPM.addPass(mlir::createCSEPass());
   }
 
+  pm.addPass(mlir::ive::createIveToSCF());
   if (isLoweringToAffine) {
     pm.addPass(mlir::ive::createLowerToAffinePass());
 

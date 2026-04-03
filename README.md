@@ -109,6 +109,30 @@ def multiply_transpose(a, b) {
 }
 ```
 
+### If Expression
+
+The condition of an `if` expression must be a 0-dimensional tensor (`tensor<f64>`).
+This means the condition is a scalar tensor value, not a ranked tensor like
+`tensor<1xf64>` or `tensor<2x2xf64>`.
+
+```ive
+def main() {
+  var a = 1;
+  var b = 2;
+
+  if a {
+    print(a);
+  }
+  else {
+    print(b);
+  }
+
+  if (b) {
+    print(b);
+  }
+}
+```
+
 ### Struct Types
 
 ```ive

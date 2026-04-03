@@ -47,8 +47,6 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR}/include/)
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
 
-add_subdirectory(include)
-
 set(LLVM_LINK_COMPONENTS
     Core
     Support
@@ -61,6 +59,10 @@ mlir_tablegen(mlir/IveCombine.inc -gen-rewriters)
 add_public_tablegen_target(IveCombineIncGen)
 
 add_executable(ive)
+
+add_subdirectory(include)
+add_subdirectory(lib)
+
 target_sources(ive
     PRIVATE
     main.cpp
