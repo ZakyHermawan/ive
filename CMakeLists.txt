@@ -75,9 +75,7 @@ target_sources(ive
     mlir/Dialect.cpp
     mlir/MLIRGen.cpp    
     mlir/IveCombine.cpp
-    mlir/LowerToLLVM.cpp
     mlir/ShapeInferencePass.cpp
-    mlir/LowerToAffineLoops.cpp
 )
 
 add_dependencies(ive

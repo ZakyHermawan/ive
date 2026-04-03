@@ -7,6 +7,8 @@ target_include_directories(ive PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRE
 target_sources(ive
 	PRIVATE
 	IveToSCF.cpp
+	LowerToAffineLoops.cpp
+	LowerToLLVM.cpp
 )
 
 add_dependencies(ive

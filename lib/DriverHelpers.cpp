@@ -1,11 +1,11 @@
 #include "ive/DriverHelpers.hpp"
+#include "IveToSCF.hpp"
 #include "ive/AST.hpp"
 #include "ive/Dialect.hpp"
 #include "ive/Lexer.hpp"
 #include "ive/MLIRGen.hpp"
 #include "ive/Parser.hpp"
 #include "ive/Passes.hpp"
-#include "IveToSCF.hpp"
 
 #include <mlir/Dialect/Affine/Transforms/Passes.h>
 #include <mlir/Dialect/LLVMIR/Transforms/Passes.h>
@@ -103,7 +103,6 @@ int loadAndProcessMLIR(mlir::MLIRContext &context,
     optPM.addPass(mlir::createCSEPass());
   }
 
-  pm.addPass(mlir::ive::createIveToSCF());
   if (isLoweringToAffine) {
     pm.addPass(mlir::ive::createLowerToAffinePass());
 
@@ -118,6 +117,7 @@ int loadAndProcessMLIR(mlir::MLIRContext &context,
   }
 
   if (isLoweringToLLVM) {
+    pm.addPass(mlir::ive::createIveToSCF());
     pm.addPass(mlir::ive::createLowerToLLVMPass());
     pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
   }
