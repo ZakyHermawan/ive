@@ -87,6 +87,24 @@ Token Lexer::getTok() {
     if (m_identifierStr == "else") {
       return tok_else;
     }
+    if(m_identifierStr == "eq") {
+      return tok_eq;
+    }
+    if(m_identifierStr == "ne") {
+      return tok_ne;
+    }
+    if(m_identifierStr == "lt") {
+      return tok_lt;
+    }
+    if(m_identifierStr == "le") {
+      return tok_le;
+    }
+    if(m_identifierStr == "gt") {
+      return tok_gt;
+    }
+    if(m_identifierStr == "ge") {
+      return tok_ge;
+    }
 
     return tok_identifier;
   }

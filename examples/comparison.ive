@@ -4,12 +4,12 @@ def main() {
   var c = 3;
   var d = 4;
   var e = 5;
-  var comp1 = a < b;
-  var comp2 = b <= c;
-  var comp3 = d > c;
-  var comp4 = d >= e;
-  var comp5 = a == a;
-  var comp6 = b != a;
+  var comp1 = a lt b;
+  var comp2 = b lg c;
+  var comp3 = d gt c;
+  var comp4 = d ge e;
+  var comp5 = a eq a;
+  var comp6 = b ne a;
 
   print(comp1);
   print(comp2);

@@ -591,6 +591,14 @@ int Parser::getTokPrecedence() {
 
   // 1 is lowest precedence.
   switch (static_cast<char>(m_lexer.getCurrToken())) {
+  case tok_eq:
+  case tok_ne:
+    return 8;
+  case tok_lt:
+  case tok_le:
+  case tok_gt:
+  case tok_ge:
+    return 10;
   case '-':
     return 20;
   case '+':
