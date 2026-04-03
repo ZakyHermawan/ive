@@ -104,6 +104,7 @@ int loadAndProcessMLIR(mlir::MLIRContext &context,
   }
 
   if (isLoweringToAffine) {
+    pm.addPass(mlir::ive::createIveToSCF());
     pm.addPass(mlir::ive::createLowerToAffinePass());
 
     mlir::OpPassManager &optPM = pm.nest<mlir::ive::FuncOp>();
@@ -117,7 +118,6 @@ int loadAndProcessMLIR(mlir::MLIRContext &context,
   }
 
   if (isLoweringToLLVM) {
-    pm.addPass(mlir::ive::createIveToSCF());
     pm.addPass(mlir::ive::createLowerToLLVMPass());
     pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
   }
