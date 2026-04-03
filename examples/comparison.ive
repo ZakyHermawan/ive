@@ -1,0 +1,20 @@
+def main() {
+  var a = 1;
+  var b = 2;
+  var c = 3;
+  var d = 4;
+  var e = 5;
+  var comp1 = a < b;
+  var comp2 = b <= c;
+  var comp3 = d > c;
+  var comp4 = d >= e;
+  var comp5 = a == a;
+  var comp6 = b != a;
+
+  print(comp1);
+  print(comp2);
+  print(comp3);
+  print(comp4);
+  print(comp5);
+  print(comp6);
+}
