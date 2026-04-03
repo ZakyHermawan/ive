@@ -95,13 +95,13 @@ struct ConvertFor : public OpConversionPattern<ForOp> {
     Block *dstBody = scfFor.getBody();
 
     rewriter.setInsertionPointToStart(dstBody);
-    Value ivI64 = arith::IndexCastOp::create(rewriter, loc, rewriter.getI64Type(),
-                                             scfFor.getInductionVar());
+    Value ivI64 = arith::IndexCastOp::create(
+        rewriter, loc, rewriter.getI64Type(), scfFor.getInductionVar());
     Value ivF64 =
         arith::SIToFPOp::create(rewriter, loc, rewriter.getF64Type(), ivI64);
     auto scalarTensorTy = RankedTensorType::get({}, rewriter.getF64Type());
     Value ivTensor =
-      tensor::SplatOp::create(rewriter, loc, scalarTensorTy, ivF64);
+        tensor::SplatOp::create(rewriter, loc, scalarTensorTy, ivF64);
 
     rewriter.eraseOp(dstBody->getTerminator());
     Block *srcBody = &forOp.getBody().front();

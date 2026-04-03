@@ -340,7 +340,8 @@ private:
     bodyBlock->addArgument(lowerBound.getType(), location);
 
     builder.setInsertionPointToStart(bodyBlock);
-    symbolTable.insert(iterVar->getName(), {bodyBlock->getArgument(0), iterVar});
+    symbolTable.insert(iterVar->getName(),
+                       {bodyBlock->getArgument(0), iterVar});
     if (failed(mlirGen(*forExpr.getBody())))
       return mlir::failure();
 

@@ -320,8 +320,8 @@ struct TensorExtractOpLowering : public OpConversionPattern<tensor::ExtractOp> {
       return rewriter.notifyMatchFailure(
           op, "expected rank-0 memref tensor.extract with no indices");
 
-    rewriter.replaceOpWithNewOp<affine::AffineLoadOp>(
-        op, adaptor.getTensor(), ValueRange{});
+    rewriter.replaceOpWithNewOp<affine::AffineLoadOp>(op, adaptor.getTensor(),
+                                                      ValueRange{});
     return success();
   }
 };
@@ -423,8 +423,7 @@ void IveToAffineLoweringPass::runOnOperation() {
   RewritePatternSet patterns(&getContext());
   patterns.add<AddOpLowering, SubOpLowering, ConstantOpLowering, FuncOpLowering,
                MulOpLowering, DivOpLowering, CmpOpLowering, PrintOpLowering,
-               ReturnOpLowering, TransposeOpLowering,
-               TensorSplatOpLowering,
+               ReturnOpLowering, TransposeOpLowering, TensorSplatOpLowering,
                TensorExtractOpLowering>(&getContext());
 
   // With the target and rewrite patterns defined, we can now attempt the
