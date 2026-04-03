@@ -127,6 +127,47 @@ using SubOpLowering = BinaryOpLowering<ive::SubOp, arith::SubFOp>;
 using MulOpLowering = BinaryOpLowering<ive::MulOp, arith::MulFOp>;
 using DivOpLowering = BinaryOpLowering<ive::DivOp, arith::DivFOp>;
 
+struct CmpOpLowering : public OpConversionPattern<ive::CmpOp> {
+  using OpConversionPattern<ive::CmpOp>::OpConversionPattern;
+  using OpAdaptor = typename OpConversionPattern<ive::CmpOp>::OpAdaptor;
+
+  LogicalResult
+  matchAndRewrite(ive::CmpOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    auto loc = op->getLoc();
+
+    arith::CmpFPredicate pred;
+    auto predicate = op.getPredicate();
+    if (predicate == "lt") {
+      pred = arith::CmpFPredicate::OLT;
+    } else if (predicate == "le") {
+      pred = arith::CmpFPredicate::OLE;
+    } else if (predicate == "gt") {
+      pred = arith::CmpFPredicate::OGT;
+    } else if (predicate == "ge") {
+      pred = arith::CmpFPredicate::OGE;
+    } else if (predicate == "eq") {
+      pred = arith::CmpFPredicate::OEQ;
+    } else if (predicate == "ne") {
+      pred = arith::CmpFPredicate::ONE;
+    } else {
+      return rewriter.notifyMatchFailure(op, "invalid cmp predicate");
+    }
+
+    lowerOpToLoops(op, rewriter, [&](OpBuilder &builder, ValueRange loopIvs) {
+      auto loadedLhs =
+          affine::AffineLoadOp::create(builder, loc, adaptor.getLhs(), loopIvs);
+      auto loadedRhs =
+          affine::AffineLoadOp::create(builder, loc, adaptor.getRhs(), loopIvs);
+      auto cmp =
+          arith::CmpFOp::create(builder, loc, pred, loadedLhs, loadedRhs);
+      return arith::UIToFPOp::create(builder, loc, builder.getF64Type(),
+                                     cmp.getResult());
+    });
+    return success();
+  }
+};
+
 //===----------------------------------------------------------------------===//
 // IveToAffine Conversion Patterns: Constant operations
 //===----------------------------------------------------------------------===//
@@ -340,8 +381,8 @@ void IveToAffineLoweringPass::runOnOperation() {
   // the set of patterns that will lower the Ive operations.
   RewritePatternSet patterns(&getContext());
   patterns.add<AddOpLowering, SubOpLowering, ConstantOpLowering, FuncOpLowering,
-               MulOpLowering, DivOpLowering, PrintOpLowering, ReturnOpLowering,
-               TransposeOpLowering>(&getContext());
+               MulOpLowering, DivOpLowering, CmpOpLowering, PrintOpLowering,
+               ReturnOpLowering, TransposeOpLowering>(&getContext());
 
   // With the target and rewrite patterns defined, we can now attempt the
   // conversion. The conversion will signal failure if any of our `illegal`

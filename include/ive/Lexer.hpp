@@ -21,36 +21,46 @@ struct Location {
 };
 
 // List of Token returned by the lexer.
-enum Token : int {
-  tok_semicolon = ';',
-  tok_parenthese_open = '(',
-  tok_parenthese_close = ')',
-  tok_bracket_open = '{',
-  tok_bracket_close = '}',
-  tok_sbracket_open = '[',
-  tok_sbracket_close = ']',
+enum class Token : int {
+  Colon = ':',
+  Semicolon = ';',
+  ParentheseOpen = '(',
+  ParentheseClose = ')',
+  BracketOpen = '{',
+  BracketClose = '}',
+  SBracketOpen = '[',
+  SBracketClose = ']',
+  Comma = ',',
+  Plus = '+',
+  Minus = '-',
+  Star = '*',
+  Slash = '/',
+  Dot = '.',
+  Equal = '=',
+  Less = '<',
+  Greater = '>',
 
-  tok_eof = -1,
+  EndOfFile = -1,
 
   // commands
-  tok_return = -2,
-  tok_var = -3,
-  tok_def = -4,
-  tok_struct = -5,
-  tok_if = -6,
-  tok_else = -7,
+  Return = -2,
+  Var = -3,
+  Def = -4,
+  Struct = -5,
+  If = -6,
+  Else = -7,
 
   // primary
-  tok_identifier = -8,
-  tok_number = -9,
+  Identifier = -8,
+  Number = -9,
 
   // comparison
-  tok_eq = -10,
-  tok_ne = -11,
-  tok_lt = -12,
-  tok_le = -13,
-  tok_gt = -14,
-  tok_ge = -15
+  Eq = -10,
+  Ne = -11,
+  Lt = -12,
+  Le = -13,
+  Gt = -14,
+  Ge = -15,
 };
 
 /// The Lexer is an abstract base class providing all the facilities that the
@@ -76,10 +86,10 @@ public:
   /// matching the expectation.
   void consume(Token tok);
 
-  /// Return the current identifier (prereq: getCurToken() == tok_identifier)
+  /// Return the current identifier (prereq: getCurToken() == Token::Identifier)
   llvm::StringRef getId() const;
 
-  /// Return the current number (prereq: getCurToken() == tok_number)
+  /// Return the current number (prereq: getCurToken() == Token::Number)
   double getValue() const;
 
   /// Return the location for the beginning of the current token.
@@ -106,7 +116,7 @@ private:
   Token getTok();
 
   /// The last token read from the input.
-  Token m_currTok = tok_eof;
+  Token m_currTok = Token::EndOfFile;
 
   /// Location for `curTok`.
   Location m_lastLocation;
@@ -120,7 +130,7 @@ private:
   /// The last value returned by getNextChar(). We need to keep it around as we
   /// always need to read ahead one character to decide when to end a token and
   /// we can't put it back in the stream after reading from it.
-  Token m_lastChar = Token(' ');
+  int m_lastChar = ' ';
 
   /// Keep track of the current line number in the input stream
   int m_currLineNum = 0;

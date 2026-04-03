@@ -112,8 +112,9 @@ def multiply_transpose(a, b) {
 ### If Expression
 
 The condition of an `if` expression must be a 0-dimensional tensor (`tensor<f64>`).
-This means the condition is a scalar tensor value, not a ranked tensor like
-`tensor<1xf64>` or `tensor<2x2xf64>`.
+This means the condition is a scalar tensor value (a 0-dimensional tensor),
+not a 1-D vector tensor like `tensor<1xf64>` or a ranked tensor like
+`tensor<2x2xf64>`.
 
 ```ive
 def main() {
@@ -160,8 +161,38 @@ def main() {
 ### Built-in Operations
 
 - Arithmetic: `+`, `-`, `*`, `/`
+- Comparison: `lt`, `le`, `gt`, `ge`, `eq`, `ne`
 - Tensor operations: `transpose()`, `reshape()`
 - Shape inference: Automatic deduction of result shapes
+
+### Comparison Operators
+
+Ive supports keyword-based comparison operators:
+
+- `lt` (less-than)
+- `le` (less-than-or-equal)
+- `gt` (greater-than)
+- `ge` (greater-than-or-equal)
+- `eq` (equal)
+- `ne` (not-equal)
+
+Example:
+
+```ive
+def main() {
+  var a = 1;
+  var b = 2;
+
+  var c1 = a lt b;
+  var c2 = a eq a;
+
+  # Comparisons of scalar operands produce scalar truth values,
+  # represented as a 0-dimensional tensor in Ive.
+  if c1 {
+    print(c2);
+  }
+}
+```
 
 ## Testing
 

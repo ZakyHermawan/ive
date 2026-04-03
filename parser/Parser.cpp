@@ -16,12 +16,12 @@ std::unique_ptr<ModuleAST> Parser::parseModule() {
   while (true) {
     std::unique_ptr<RecordAST> record;
     switch (m_lexer.getCurrToken()) {
-    case tok_eof:
+    case Token::EndOfFile:
       break;
-    case tok_def:
+    case Token::Def:
       record = parseDefinition();
       break;
-    case tok_struct:
+    case Token::Struct:
       record = parseStruct();
       break;
     default:
@@ -35,7 +35,7 @@ std::unique_ptr<ModuleAST> Parser::parseModule() {
   }
 
   // If we didn't reach EOF, there was an error during parsing
-  if (m_lexer.getCurrToken() != tok_eof) {
+  if (m_lexer.getCurrToken() != Token::EndOfFile) {
     return parseError<ModuleAST>("nothing", "at end of module");
   }
 
@@ -44,11 +44,11 @@ std::unique_ptr<ModuleAST> Parser::parseModule() {
 
 std::unique_ptr<ReturnExprAST> Parser::parseReturn() {
   auto loc = m_lexer.getLastLocation();
-  m_lexer.consume(tok_return);
+  m_lexer.consume(Token::Return);
 
   // return takes an optional argument
   std::optional<std::unique_ptr<ExprAST>> expr;
-  if (m_lexer.getCurrToken() != ';') {
+  if (m_lexer.getCurrToken() != Token::Semicolon) {
     expr = parseExpression();
     if (!expr) {
       return nullptr;
@@ -61,13 +61,13 @@ std::unique_ptr<ExprAST> Parser::parseNumberExpr() {
   auto loc = m_lexer.getLastLocation();
   auto result =
       std::make_unique<NumberExprAST>(std::move(loc), m_lexer.getValue());
-  m_lexer.consume(tok_number);
+  m_lexer.consume(Token::Number);
   return std::move(result);
 }
 
 std::unique_ptr<ExprAST> Parser::parseTensorLiteralExpr() {
   auto loc = m_lexer.getLastLocation();
-  m_lexer.consume(Token('['));
+  m_lexer.consume(Token::SBracketOpen);
 
   // Hold the list of values at this nesting level.
   std::vector<std::unique_ptr<ExprAST>> values;
@@ -75,22 +75,22 @@ std::unique_ptr<ExprAST> Parser::parseTensorLiteralExpr() {
   std::vector<int64_t> dims;
   do {
     // We can have either another nested array or a number literal.
-    if (m_lexer.getCurrToken() == '[') {
+    if (m_lexer.getCurrToken() == Token::SBracketOpen) {
       values.push_back(parseTensorLiteralExpr());
       if (!values.back())
         return nullptr; // parse error in the nested array.
     } else {
-      if (m_lexer.getCurrToken() != tok_number)
+      if (m_lexer.getCurrToken() != Token::Number)
         return parseError<ExprAST>("<num> or [", "in literal expression");
       values.push_back(parseNumberExpr());
     }
 
     // End of this list on ']'
-    if (m_lexer.getCurrToken() == ']')
+    if (m_lexer.getCurrToken() == Token::SBracketClose)
       break;
 
     // Elements are separated by a comma.
-    if (m_lexer.getCurrToken() != ',')
+    if (m_lexer.getCurrToken() != Token::Comma)
       return parseError<ExprAST>("] or ,", "in literal expression");
 
     m_lexer.getNextToken(); // eat ,
@@ -133,33 +133,33 @@ std::unique_ptr<ExprAST> Parser::parseTensorLiteralExpr() {
 
 std::unique_ptr<ExprAST> Parser::parseStructLiteralExpr() {
   auto loc = m_lexer.getLastLocation();
-  m_lexer.consume(Token('{'));
+  m_lexer.consume(Token::BracketOpen);
 
   // Hold the list of values.
   std::vector<std::unique_ptr<ExprAST>> values;
   do {
     // We can have either another nested array or a number literal.
-    if (m_lexer.getCurrToken() == '[') {
+    if (m_lexer.getCurrToken() == Token::SBracketOpen) {
       values.push_back(parseTensorLiteralExpr());
       if (!values.back())
         return nullptr;
-    } else if (m_lexer.getCurrToken() == tok_number) {
+    } else if (m_lexer.getCurrToken() == Token::Number) {
       values.push_back(parseNumberExpr());
       if (!values.back())
         return nullptr;
     } else {
-      if (m_lexer.getCurrToken() != '{')
+      if (m_lexer.getCurrToken() != Token::BracketOpen)
         return parseError<ExprAST>("{, [, or number",
                                    "in struct literal expression");
       values.push_back(parseStructLiteralExpr());
     }
 
     // End of this list on '}'
-    if (m_lexer.getCurrToken() == '}')
+    if (m_lexer.getCurrToken() == Token::BracketClose)
       break;
 
     // Elements are separated by a comma.
-    if (m_lexer.getCurrToken() != ',')
+    if (m_lexer.getCurrToken() != Token::Comma)
       return parseError<ExprAST>("} or ,", "in struct literal expression");
 
     m_lexer.getNextToken(); // eat ,
@@ -179,32 +179,32 @@ std::unique_ptr<ExprAST> Parser::parseParenExpr() {
   if (!v)
     return nullptr;
 
-  if (m_lexer.getCurrToken() != ')')
+  if (m_lexer.getCurrToken() != Token::ParentheseClose)
     return parseError<ExprAST>(")", "to close expression with parentheses");
-  m_lexer.consume(Token(')'));
+  m_lexer.consume(Token::ParentheseClose);
   return v;
 }
 
 std::unique_ptr<ExprAST> Parser::parseCallExpr(llvm::StringRef name,
                                                const Location &loc) {
-  m_lexer.consume(Token('('));
+  m_lexer.consume(Token::ParentheseOpen);
   std::vector<std::unique_ptr<ExprAST>> args;
-  if (m_lexer.getCurrToken() != ')') {
+  if (m_lexer.getCurrToken() != Token::ParentheseClose) {
     while (true) {
       if (auto arg = parseExpression()) {
         args.push_back(std::move(arg));
       } else
         return nullptr;
 
-      if (m_lexer.getCurrToken() == ')')
+      if (m_lexer.getCurrToken() == Token::ParentheseClose)
         break;
 
-      if (m_lexer.getCurrToken() != ',')
+      if (m_lexer.getCurrToken() != Token::Comma)
         return parseError<ExprAST>(", or )", "in argument list");
       m_lexer.getNextToken();
     }
   }
-  m_lexer.consume(Token(')'));
+  m_lexer.consume(Token::ParentheseClose);
 
   // It can be a builtin call to print
   if (name == "print") {
@@ -224,7 +224,7 @@ std::unique_ptr<ExprAST> Parser::parseIdentifierExpr() {
   auto loc = m_lexer.getLastLocation();
   m_lexer.getNextToken(); // eat identifier.
 
-  if (m_lexer.getCurrToken() != '(') // Simple variable ref.
+  if (m_lexer.getCurrToken() != Token::ParentheseOpen) // Simple variable ref.
     return std::make_unique<VariableExprAST>(std::move(loc), name);
 
   // This is a function call.
@@ -234,22 +234,23 @@ std::unique_ptr<ExprAST> Parser::parseIdentifierExpr() {
 std::unique_ptr<ExprAST> Parser::parsePrimary() {
   switch (m_lexer.getCurrToken()) {
   default:
-    llvm::errs() << "unknown token '" << m_lexer.getCurrToken()
+    llvm::errs() << "unknown token '"
+                 << static_cast<int>(m_lexer.getCurrToken())
                  << "' when expecting an expression\n";
     return nullptr;
-  case tok_identifier:
+  case Token::Identifier:
     return parseIdentifierExpr();
-  case tok_number:
+  case Token::Number:
     return parseNumberExpr();
-  case '(':
+  case Token::ParentheseOpen:
     return parseParenExpr();
-  case '[':
+  case Token::SBracketOpen:
     return parseTensorLiteralExpr();
-  case '{':
+  case Token::BracketOpen:
     return parseStructLiteralExpr();
-  case ';':
+  case Token::Semicolon:
     return nullptr;
-  case '}':
+  case Token::BracketClose:
     return nullptr;
   }
 }
@@ -266,8 +267,8 @@ std::unique_ptr<ExprAST> Parser::parseBinOpRHS(int exprPrec,
       return lhs;
 
     // Okay, we know this is a binop.
-    int binOp = m_lexer.getCurrToken();
-    m_lexer.consume(Token(binOp));
+    Token binOp = m_lexer.getCurrToken();
+    m_lexer.consume(binOp);
     auto loc = m_lexer.getLastLocation();
 
     // Parse the primary expression after the binary operator.
@@ -299,20 +300,20 @@ std::unique_ptr<ExprAST> Parser::parseExpression() {
 }
 
 std::unique_ptr<VarType> Parser::parseType() {
-  if (m_lexer.getCurrToken() != '<')
+  if (m_lexer.getCurrToken() != Token::Less)
     return parseError<VarType>("<", "to begin type");
   m_lexer.getNextToken(); // eat <
 
   auto type = std::make_unique<VarType>();
 
-  while (m_lexer.getCurrToken() == tok_number) {
+  while (m_lexer.getCurrToken() == Token::Number) {
     type->shape.push_back(m_lexer.getValue());
     m_lexer.getNextToken();
-    if (m_lexer.getCurrToken() == ',')
+    if (m_lexer.getCurrToken() == Token::Comma)
       m_lexer.getNextToken();
   }
 
-  if (m_lexer.getCurrToken() != '>')
+  if (m_lexer.getCurrToken() != Token::Greater)
     return parseError<VarType>(">", "to end type");
   m_lexer.getNextToken(); // eat >
   return type;
@@ -321,10 +322,10 @@ std::unique_ptr<VarType> Parser::parseType() {
 std::unique_ptr<ExprAST> Parser::parseDeclarationOrCallExpr() {
   auto loc = m_lexer.getLastLocation();
   std::string id(m_lexer.getId());
-  m_lexer.consume(tok_identifier);
+  m_lexer.consume(Token::Identifier);
 
   // Check for a call expression.
-  if (m_lexer.getCurrToken() == '(')
+  if (m_lexer.getCurrToken() == Token::ParentheseOpen)
     return parseCallExpr(id, loc);
 
   // Otherwise, this is a variable declaration.
@@ -335,7 +336,7 @@ std::unique_ptr<VarDeclExprAST>
 Parser::parseTypedDeclaration(llvm::StringRef typeName,
                               bool requiresInitializer, const Location &loc) {
   // Parse the variable name.
-  if (m_lexer.getCurrToken() != tok_identifier)
+  if (m_lexer.getCurrToken() != Token::Identifier)
     return parseError<VarDeclExprAST>("name", "in variable declaration");
   std::string id(m_lexer.getId());
   m_lexer.getNextToken(); // eat id
@@ -343,10 +344,10 @@ Parser::parseTypedDeclaration(llvm::StringRef typeName,
   // Parse the initializer.
   std::unique_ptr<ExprAST> expr;
   if (requiresInitializer) {
-    if (m_lexer.getCurrToken() != '=')
+    if (m_lexer.getCurrToken() != Token::Equal)
       return parseError<VarDeclExprAST>("initializer",
                                         "in variable declaration");
-    m_lexer.consume(Token('='));
+    m_lexer.consume(Token::Equal);
     expr = parseExpression();
   }
 
@@ -359,11 +360,11 @@ Parser::parseTypedDeclaration(llvm::StringRef typeName,
 std::unique_ptr<VarDeclExprAST>
 Parser::parseDeclaration(bool requiresInitializer) {
   // Check to see if this is a 'var' declaration.
-  if (m_lexer.getCurrToken() == tok_var)
+  if (m_lexer.getCurrToken() == Token::Var)
     return parseVarDeclaration(requiresInitializer);
 
   // Parse the type name.
-  if (m_lexer.getCurrToken() != tok_identifier)
+  if (m_lexer.getCurrToken() != Token::Identifier)
     return parseError<VarDeclExprAST>("type name", "in variable declaration");
   auto loc = m_lexer.getLastLocation();
   std::string typeName(m_lexer.getId());
@@ -375,18 +376,18 @@ Parser::parseDeclaration(bool requiresInitializer) {
 
 std::unique_ptr<VarDeclExprAST>
 Parser::parseVarDeclaration(bool requiresInitializer) {
-  if (m_lexer.getCurrToken() != tok_var)
+  if (m_lexer.getCurrToken() != Token::Var)
     return parseError<VarDeclExprAST>("var", "to begin declaration");
   auto loc = m_lexer.getLastLocation();
   m_lexer.getNextToken(); // eat var
 
-  if (m_lexer.getCurrToken() != tok_identifier)
+  if (m_lexer.getCurrToken() != Token::Identifier)
     return parseError<VarDeclExprAST>("identified", "after 'var' declaration");
   std::string id(m_lexer.getId());
   m_lexer.getNextToken(); // eat id
 
   std::unique_ptr<VarType> type; // Type is optional, it can be inferred
-  if (m_lexer.getCurrToken() == '<') {
+  if (m_lexer.getCurrToken() == Token::Less) {
     type = parseType();
     if (!type)
       return nullptr;
@@ -396,7 +397,7 @@ Parser::parseVarDeclaration(bool requiresInitializer) {
 
   std::unique_ptr<ExprAST> expr;
   if (requiresInitializer) {
-    m_lexer.consume(Token('='));
+    m_lexer.consume(Token::Equal);
     expr = parseExpression();
   }
   return std::make_unique<VarDeclExprAST>(std::move(loc), std::move(id),
@@ -404,37 +405,38 @@ Parser::parseVarDeclaration(bool requiresInitializer) {
 }
 
 std::unique_ptr<ExprASTList> Parser::parseBlock() {
-  if (m_lexer.getCurrToken() != '{')
+  if (m_lexer.getCurrToken() != Token::BracketOpen)
     return parseError<ExprASTList>("{", "to begin block");
-  m_lexer.consume(Token('{'));
+  m_lexer.consume(Token::BracketOpen);
 
   auto exprList = std::make_unique<ExprASTList>();
 
   // Ignore empty expressions: swallow sequences of semicolons.
-  while (m_lexer.getCurrToken() == ';')
-    m_lexer.consume(Token(';'));
+  while (m_lexer.getCurrToken() == Token::Semicolon)
+    m_lexer.consume(Token::Semicolon);
 
   bool shouldEndsWithSemiColon = true;
-  while (m_lexer.getCurrToken() != '}' && m_lexer.getCurrToken() != tok_eof) {
-    if (m_lexer.getCurrToken() == tok_identifier) {
+  while (m_lexer.getCurrToken() != Token::BracketClose &&
+         m_lexer.getCurrToken() != Token::EndOfFile) {
+    if (m_lexer.getCurrToken() == Token::Identifier) {
       // Variable declaration or call
       auto expr = parseDeclarationOrCallExpr();
       if (!expr)
         return nullptr;
       exprList->push_back(std::move(expr));
-    } else if (m_lexer.getCurrToken() == tok_var) {
+    } else if (m_lexer.getCurrToken() == Token::Var) {
       // Variable declaration
       auto varDecl = parseDeclaration(/*requiresInitializer=*/true);
       if (!varDecl)
         return nullptr;
       exprList->push_back(std::move(varDecl));
-    } else if (m_lexer.getCurrToken() == tok_return) {
+    } else if (m_lexer.getCurrToken() == Token::Return) {
       // Return statement
       auto ret = parseReturn();
       if (!ret)
         return nullptr;
       exprList->push_back(std::move(ret));
-    } else if (m_lexer.getCurrToken() == tok_if) {
+    } else if (m_lexer.getCurrToken() == Token::If) {
       shouldEndsWithSemiColon = false;
       auto ifExpr = parseIfExpr();
       if (!ifExpr) {
@@ -449,40 +451,40 @@ std::unique_ptr<ExprASTList> Parser::parseBlock() {
       exprList->push_back(std::move(expr));
     }
     // Ensure that elements are separated by a semicolon.
-    if (m_lexer.getCurrToken() != ';' && shouldEndsWithSemiColon)
+    if (m_lexer.getCurrToken() != Token::Semicolon && shouldEndsWithSemiColon)
       return parseError<ExprASTList>(";", "after expression");
 
     // Ignore empty expressions: swallow sequences of semicolons.
-    while (m_lexer.getCurrToken() == ';')
-      m_lexer.consume(Token(';'));
+    while (m_lexer.getCurrToken() == Token::Semicolon)
+      m_lexer.consume(Token::Semicolon);
   }
 
-  if (m_lexer.getCurrToken() != '}')
+  if (m_lexer.getCurrToken() != Token::BracketClose)
     return parseError<ExprASTList>("}", "to close block");
 
-  m_lexer.consume(Token('}'));
+  m_lexer.consume(Token::BracketClose);
   return exprList;
 }
 
 std::unique_ptr<PrototypeAST> Parser::parsePrototype() {
   auto loc = m_lexer.getLastLocation();
 
-  if (m_lexer.getCurrToken() != tok_def)
+  if (m_lexer.getCurrToken() != Token::Def)
     return parseError<PrototypeAST>("def", "in prototype");
-  m_lexer.consume(tok_def);
+  m_lexer.consume(Token::Def);
 
-  if (m_lexer.getCurrToken() != tok_identifier)
+  if (m_lexer.getCurrToken() != Token::Identifier)
     return parseError<PrototypeAST>("function name", "in prototype");
 
   std::string fnName(m_lexer.getId());
-  m_lexer.consume(tok_identifier);
+  m_lexer.consume(Token::Identifier);
 
-  if (m_lexer.getCurrToken() != '(')
+  if (m_lexer.getCurrToken() != Token::ParentheseOpen)
     return parseError<PrototypeAST>("(", "in prototype");
-  m_lexer.consume(Token('('));
+  m_lexer.consume(Token::ParentheseOpen);
 
   std::vector<std::unique_ptr<VarDeclExprAST>> args;
-  if (m_lexer.getCurrToken() != ')') {
+  if (m_lexer.getCurrToken() != Token::ParentheseClose) {
     do {
       VarType type;
       std::string name;
@@ -490,15 +492,15 @@ std::unique_ptr<PrototypeAST> Parser::parsePrototype() {
       // Parse either the name of the variable, or its type.
       std::string nameOrType(m_lexer.getId());
       auto loc = m_lexer.getLastLocation();
-      m_lexer.consume(tok_identifier);
+      m_lexer.consume(Token::Identifier);
 
       // If the next token is an identifier, we just parsed the type.
-      if (m_lexer.getCurrToken() == tok_identifier) {
+      if (m_lexer.getCurrToken() == Token::Identifier) {
         type.name = std::move(nameOrType);
 
         // Parse the name.
         name = std::string(m_lexer.getId());
-        m_lexer.consume(tok_identifier);
+        m_lexer.consume(Token::Identifier);
       } else {
         // Otherwise, we just parsed the name.
         name = std::move(nameOrType);
@@ -506,19 +508,19 @@ std::unique_ptr<PrototypeAST> Parser::parsePrototype() {
 
       args.push_back(
           std::make_unique<VarDeclExprAST>(std::move(loc), name, type));
-      if (m_lexer.getCurrToken() != ',')
+      if (m_lexer.getCurrToken() != Token::Comma)
         break;
-      m_lexer.consume(Token(','));
-      if (m_lexer.getCurrToken() != tok_identifier)
+      m_lexer.consume(Token::Comma);
+      if (m_lexer.getCurrToken() != Token::Identifier)
         return parseError<PrototypeAST>("identifier",
                                         "after ',' in function parameter list");
     } while (true);
   }
-  if (m_lexer.getCurrToken() != ')')
+  if (m_lexer.getCurrToken() != Token::ParentheseClose)
     return parseError<PrototypeAST>(")", "to end function prototype");
 
   // success.
-  m_lexer.consume(Token(')'));
+  m_lexer.consume(Token::ParentheseClose);
   return std::make_unique<PrototypeAST>(std::move(loc), fnName,
                                         std::move(args));
 }
@@ -535,16 +537,16 @@ std::unique_ptr<FunctionAST> Parser::parseDefinition() {
 
 std::unique_ptr<StructAST> Parser::parseStruct() {
   auto loc = m_lexer.getLastLocation();
-  m_lexer.consume(tok_struct);
-  if (m_lexer.getCurrToken() != tok_identifier)
+  m_lexer.consume(Token::Struct);
+  if (m_lexer.getCurrToken() != Token::Identifier)
     return parseError<StructAST>("name", "in struct definition");
   std::string name(m_lexer.getId());
-  m_lexer.consume(tok_identifier);
+  m_lexer.consume(Token::Identifier);
 
   // Parse: '{'
-  if (m_lexer.getCurrToken() != '{')
+  if (m_lexer.getCurrToken() != Token::BracketOpen)
     return parseError<StructAST>("{", "in struct definition");
-  m_lexer.consume(Token('{'));
+  m_lexer.consume(Token::BracketOpen);
 
   // Parse: decl+
   std::vector<std::unique_ptr<VarDeclExprAST>> decls;
@@ -554,19 +556,19 @@ std::unique_ptr<StructAST> Parser::parseStruct() {
       return nullptr;
     decls.push_back(std::move(decl));
 
-    if (m_lexer.getCurrToken() != ';')
+    if (m_lexer.getCurrToken() != Token::Semicolon)
       return parseError<StructAST>(";", "after variable in struct definition");
-    m_lexer.consume(Token(';'));
-  } while (m_lexer.getCurrToken() != '}');
+    m_lexer.consume(Token::Semicolon);
+  } while (m_lexer.getCurrToken() != Token::BracketClose);
 
   // Parse: '}'
-  m_lexer.consume(Token('}'));
+  m_lexer.consume(Token::BracketClose);
   return std::make_unique<StructAST>(loc, name, std::move(decls));
 }
 
 std::unique_ptr<ExprAST> Parser::parseIfExpr() {
   auto loc = m_lexer.getLastLocation();
-  m_lexer.consume(tok_if);
+  m_lexer.consume(Token::If);
 
   auto ifExpr = parseExpression();
   if (!ifExpr) {
@@ -576,8 +578,8 @@ std::unique_ptr<ExprAST> Parser::parseIfExpr() {
   auto thenBlock = parseBlock();
   std::unique_ptr<ExprASTList> elseBlock = nullptr;
 
-  if (m_lexer.getCurrToken() == tok_else) {
-    m_lexer.consume(tok_else);
+  if (m_lexer.getCurrToken() == Token::Else) {
+    m_lexer.consume(Token::Else);
     elseBlock = parseBlock();
   }
 
@@ -586,28 +588,25 @@ std::unique_ptr<ExprAST> Parser::parseIfExpr() {
 }
 
 int Parser::getTokPrecedence() {
-  if (!isascii(m_lexer.getCurrToken()))
-    return -1;
-
   // 1 is lowest precedence.
-  switch (static_cast<char>(m_lexer.getCurrToken())) {
-  case tok_eq:
-  case tok_ne:
+  switch (m_lexer.getCurrToken()) {
+  case Token::Eq:
+  case Token::Ne:
     return 8;
-  case tok_lt:
-  case tok_le:
-  case tok_gt:
-  case tok_ge:
+  case Token::Lt:
+  case Token::Le:
+  case Token::Gt:
+  case Token::Ge:
     return 10;
-  case '-':
+  case Token::Minus:
     return 20;
-  case '+':
+  case Token::Plus:
     return 20;
-  case '*':
+  case Token::Star:
     return 40;
-  case '/':
+  case Token::Slash:
     return 40;
-  case '.':
+  case Token::Dot:
     return 60;
   default:
     return -1;

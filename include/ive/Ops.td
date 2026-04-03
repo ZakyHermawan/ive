@@ -154,6 +154,30 @@ def SubOp : Ive_Op<"sub",
 }
 
 //===----------------------------------------------------------------------===//
+// CmpOp
+//===----------------------------------------------------------------------===//
+
+def CmpOp : Ive_Op<"cmp",
+    [Pure, DeclareOpInterfaceMethods<ShapeInferenceOpInterface>]> {
+  let summary = "element-wise comparison operation";
+  let description = [{
+    The "cmp" operation performs an element-wise floating-point comparison
+    between two tensors and returns a numeric truth tensor (0.0 or 1.0).
+    Supported predicates are: "lt", "le", "gt", "ge", "eq", and "ne".
+  }];
+
+  let arguments = (ins F64Tensor:$lhs, F64Tensor:$rhs, StrAttr:$predicate);
+  let results = (outs F64Tensor);
+
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+
+  let builders = [
+    OpBuilder<(ins "Value":$lhs, "Value":$rhs, "StringRef":$predicate)>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // CastOp
 //===----------------------------------------------------------------------===//
 

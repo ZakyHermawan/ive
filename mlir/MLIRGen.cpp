@@ -301,7 +301,7 @@ private:
         return nullptr;
       structName = varIt.second->getType().name;
     } else if (auto *access = llvm::dyn_cast<BinaryExprAST>(expr)) {
-      if (access->getOp() != '.')
+      if (access->getOp() != Token::Dot)
         return nullptr;
       // The name being accessed should be in the RHS.
       auto *name = llvm::dyn_cast<VariableExprAST>(access->getRHS());
@@ -335,7 +335,7 @@ private:
 
   /// Return the numeric member index of the given struct access expression.
   std::optional<size_t> getMemberIndex(BinaryExprAST &accessOp) {
-    assert(accessOp.getOp() == '.' && "expected access operation");
+    assert(accessOp.getOp() == Token::Dot && "expected access operation");
 
     // Lookup the struct node for the LHS.
     StructAST *structAST = getStructFor(accessOp.getLHS());
@@ -375,7 +375,7 @@ private:
     auto location = loc(binop.loc());
 
     // If this is an access operation, handle it immediately.
-    if (binop.getOp() == '.') {
+    if (binop.getOp() == Token::Dot) {
       std::optional<size_t> accessIndex = getMemberIndex(binop);
       if (!accessIndex) {
         emitError(location, "invalid access into struct expression");
@@ -392,17 +392,40 @@ private:
     // Derive the operation name from the binary operator. At the moment we only
     // support '+' and '*'.
     switch (binop.getOp()) {
-    case '+':
+    case Token::Plus:
       return AddOp::create(builder, location, lhs, rhs);
-    case '-':
+    case Token::Minus:
       return SubOp::create(builder, location, lhs, rhs);
-    case '*':
+    case Token::Star:
       return MulOp::create(builder, location, lhs, rhs);
-    case '/':
+    case Token::Slash:
       return DivOp::create(builder, location, lhs, rhs);
+    case Token::Eq:
+    case Token::Ne:
+    case Token::Lt:
+    case Token::Le:
+    case Token::Gt:
+    case Token::Ge:
+      break;
+    default:
+      break;
     }
 
-    emitError(location, "invalid binary operator '") << binop.getOp() << "'";
+    if (binop.getOp() == Token::Eq)
+      return CmpOp::create(builder, location, lhs, rhs, "eq");
+    if (binop.getOp() == Token::Ne)
+      return CmpOp::create(builder, location, lhs, rhs, "ne");
+    if (binop.getOp() == Token::Lt)
+      return CmpOp::create(builder, location, lhs, rhs, "lt");
+    if (binop.getOp() == Token::Le)
+      return CmpOp::create(builder, location, lhs, rhs, "le");
+    if (binop.getOp() == Token::Gt)
+      return CmpOp::create(builder, location, lhs, rhs, "gt");
+    if (binop.getOp() == Token::Ge)
+      return CmpOp::create(builder, location, lhs, rhs, "ge");
+
+    emitError(location, "invalid binary operator '")
+        << static_cast<int>(binop.getOp()) << "'";
     return nullptr;
   }
 

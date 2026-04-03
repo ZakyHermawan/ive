@@ -18,12 +18,12 @@ void Lexer::consume(Token tok) {
 }
 
 llvm::StringRef Lexer::getId() const {
-  assert(m_currTok == tok_identifier);
+  assert(m_currTok == Token::Identifier);
   return m_identifierStr;
 }
 
 double Lexer::getValue() const {
-  assert(m_currTok == tok_number);
+  assert(m_currTok == Token::Number);
   return m_numVal;
 }
 
@@ -55,7 +55,7 @@ int Lexer::getNextChar() {
 Token Lexer::getTok() {
   // Skip any whitespace.
   while (isspace(m_lastChar)) {
-    m_lastChar = Token(getNextChar());
+    m_lastChar = getNextChar();
   }
 
   // Save the current location before reading the token characters.
@@ -65,48 +65,48 @@ Token Lexer::getTok() {
   // Identifier: [a-zA-Z][a-zA-Z0-9_]*
   if (isalpha(m_lastChar)) {
     m_identifierStr = (char)m_lastChar;
-    while (isalnum((m_lastChar = Token(getNextChar()))) || m_lastChar == '_') {
+    while (isalnum((m_lastChar = getNextChar())) || m_lastChar == '_') {
       m_identifierStr += (char)m_lastChar;
     }
 
     if (m_identifierStr == "return") {
-      return tok_return;
+      return Token::Return;
     }
     if (m_identifierStr == "def") {
-      return tok_def;
+      return Token::Def;
     }
     if (m_identifierStr == "struct") {
-      return tok_struct;
+      return Token::Struct;
     }
     if (m_identifierStr == "var") {
-      return tok_var;
+      return Token::Var;
     }
     if (m_identifierStr == "if") {
-      return tok_if;
+      return Token::If;
     }
     if (m_identifierStr == "else") {
-      return tok_else;
+      return Token::Else;
     }
-    if(m_identifierStr == "eq") {
-      return tok_eq;
+    if (m_identifierStr == "eq") {
+      return Token::Eq;
     }
-    if(m_identifierStr == "ne") {
-      return tok_ne;
+    if (m_identifierStr == "ne") {
+      return Token::Ne;
     }
-    if(m_identifierStr == "lt") {
-      return tok_lt;
+    if (m_identifierStr == "lt") {
+      return Token::Lt;
     }
-    if(m_identifierStr == "le") {
-      return tok_le;
+    if (m_identifierStr == "le") {
+      return Token::Le;
     }
-    if(m_identifierStr == "gt") {
-      return tok_gt;
+    if (m_identifierStr == "gt") {
+      return Token::Gt;
     }
-    if(m_identifierStr == "ge") {
-      return tok_ge;
+    if (m_identifierStr == "ge") {
+      return Token::Ge;
     }
 
-    return tok_identifier;
+    return Token::Identifier;
   }
 
   // Number: [0-9] ([0-9.])*
@@ -114,17 +114,17 @@ Token Lexer::getTok() {
     std::string numStr;
     do {
       numStr += m_lastChar;
-      m_lastChar = Token(getNextChar());
+      m_lastChar = getNextChar();
     } while (isdigit(m_lastChar) || m_lastChar == '.');
 
     m_numVal = strtod(numStr.c_str(), nullptr);
-    return tok_number;
+    return Token::Number;
   }
 
   if (m_lastChar == '#') {
     // Comment until end of line.
     do {
-      m_lastChar = Token(getNextChar());
+      m_lastChar = getNextChar();
     } while (m_lastChar != EOF && m_lastChar != '\n' && m_lastChar != '\r');
 
     if (m_lastChar != EOF) {
@@ -134,12 +134,12 @@ Token Lexer::getTok() {
 
   // Check for end of file.  Don't eat the EOF.
   if (m_lastChar == EOF) {
-    return tok_eof;
+    return Token::EndOfFile;
   }
 
   // Otherwise, just return the character as its ascii value.
-  Token thisChar = Token(m_lastChar);
-  m_lastChar = Token(getNextChar());
+  Token thisChar = static_cast<Token>(m_lastChar);
+  m_lastChar = getNextChar();
   return thisChar;
 }
 

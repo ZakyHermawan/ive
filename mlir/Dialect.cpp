@@ -6,8 +6,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "ive/Dialect.hpp"
-#include "llvm/Support/LogicalResult.h"
 #include "ive/ShapeInferenceInterface.hpp"
+#include "llvm/Support/LogicalResult.h"
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/Hashing.h>
@@ -305,6 +305,37 @@ void SubOp::print(mlir::OpAsmPrinter &p) { printBinaryOp(p, *this); }
 void SubOp::inferShapes() { getResult().setType(getLhs().getType()); }
 
 //===----------------------------------------------------------------------===//
+// CmpOp
+//===----------------------------------------------------------------------===//
+
+void CmpOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
+                  mlir::Value lhs, mlir::Value rhs, StringRef predicate) {
+  state.addTypes(lhs.getType());
+  state.addOperands({lhs, rhs});
+  state.addAttribute("predicate", builder.getStringAttr(predicate));
+}
+
+mlir::ParseResult CmpOp::parse(mlir::OpAsmParser &parser,
+                               mlir::OperationState &result) {
+  return parseBinaryOp(parser, result);
+}
+
+void CmpOp::print(mlir::OpAsmPrinter &p) { printBinaryOp(p, *this); }
+
+llvm::LogicalResult CmpOp::verify() {
+  auto predicate = getPredicate();
+  if (predicate == "lt" || predicate == "le" || predicate == "gt" ||
+      predicate == "ge" || predicate == "eq" || predicate == "ne")
+    return mlir::success();
+
+  return emitOpError("invalid comparison predicate '") << predicate << "'";
+}
+
+/// Infer the output shape of the CmpOp, this is required by the shape
+/// inference interface.
+void CmpOp::inferShapes() { getResult().setType(getLhs().getType()); }
+
+//===----------------------------------------------------------------------===//
 // CastOp
 //===----------------------------------------------------------------------===//
 
@@ -536,7 +567,23 @@ void IfOp::print(mlir::OpAsmPrinter &printer) {
   }
 }
 
-llvm::LogicalResult IfOp::verify() { return mlir::success(); }
+llvm::LogicalResult IfOp::verify() {
+  auto condType = llvm::dyn_cast<TensorType>(getCondition().getType());
+  if (!condType)
+    return emitOpError("condition must be a tensor type");
+
+  // Allow unranked tensors before shape inference; enforce scalar when ranked.
+  if (auto rankedCond = llvm::dyn_cast<RankedTensorType>(condType)) {
+    if (rankedCond.getRank() != 0)
+      return emitOpError("condition must be a 0-dimensional tensor, got rank ")
+             << rankedCond.getRank();
+  }
+
+  if (!llvm::isa<Float64Type>(condType.getElementType()))
+    return emitOpError("condition tensor element type must be f64");
+
+  return mlir::success();
+}
 
 //===----------------------------------------------------------------------===//
 // StructAccessOp

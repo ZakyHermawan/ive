@@ -142,9 +142,10 @@ private:
     auto curToken = m_lexer.getCurrToken();
     llvm::errs() << "Parse error (" << m_lexer.getLastLocation().line << ", "
                  << m_lexer.getLastLocation().col << "): expected '" << expected
-                 << "' " << context << " but has Token " << curToken;
-    if (isprint(curToken))
-      llvm::errs() << " '" << (char)curToken << "'";
+                 << "' " << context << " but has Token "
+                 << static_cast<int>(curToken);
+    if (isprint(static_cast<int>(curToken)))
+      llvm::errs() << " '" << static_cast<char>(curToken) << "'";
     llvm::errs() << "\n";
     return nullptr;
   }

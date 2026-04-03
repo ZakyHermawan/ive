@@ -12,6 +12,7 @@
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
 
+#include <cctype>
 #include <string>
 
 using namespace ive;
@@ -177,7 +178,13 @@ void ASTDumper::dump(ReturnExprAST *node) {
 /// Print a binary operation, first the operator, then recurse into LHS and RHS.
 void ASTDumper::dump(BinaryExprAST *node) {
   INDENT();
-  llvm::errs() << "BinOp: " << node->getOp() << " " << loc(node) << "\n";
+  int op = static_cast<int>(node->getOp());
+  llvm::errs() << "BinOp: ";
+  if (isprint(op))
+    llvm::errs() << static_cast<char>(op);
+  else
+    llvm::errs() << op;
+  llvm::errs() << " " << loc(node) << "\n";
   dump(node->getLHS());
   dump(node->getRHS());
 }

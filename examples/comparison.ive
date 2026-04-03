@@ -5,7 +5,7 @@ def main() {
   var d = 4;
   var e = 5;
   var comp1 = a lt b;
-  var comp2 = b lg c;
+  var comp2 = b le c;
   var comp3 = d gt c;
   var comp4 = d ge e;
   var comp5 = a eq a;

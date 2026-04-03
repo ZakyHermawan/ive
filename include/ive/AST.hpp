@@ -161,15 +161,15 @@ public:
 
 /// Expression class for a binary operator.
 class BinaryExprAST : public ExprAST {
-  char op;
+  Token op;
   std::unique_ptr<ExprAST> lhs, rhs;
 
 public:
-  char getOp() { return op; }
+  Token getOp() { return op; }
   ExprAST *getLHS() { return lhs.get(); }
   ExprAST *getRHS() { return rhs.get(); }
 
-  BinaryExprAST(Location loc, char op, std::unique_ptr<ExprAST> lhs,
+  BinaryExprAST(Location loc, Token op, std::unique_ptr<ExprAST> lhs,
                 std::unique_ptr<ExprAST> rhs)
       : ExprAST(Expr_BinOp, std::move(loc)), op(op), lhs(std::move(lhs)),
         rhs(std::move(rhs)) {}
