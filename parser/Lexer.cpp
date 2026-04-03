@@ -87,6 +87,9 @@ Token Lexer::getTok() {
     if (m_identifierStr == "else") {
       return Token::Else;
     }
+    if (m_identifierStr == "for") {
+      return Token::For;
+    }
     if (m_identifierStr == "eq") {
       return Token::Eq;
     }

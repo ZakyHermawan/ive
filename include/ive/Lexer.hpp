@@ -49,6 +49,7 @@ enum class Token : int {
   Struct = -5,
   If = -6,
   Else = -7,
+  For = -16,
 
   // primary
   Identifier = -8,

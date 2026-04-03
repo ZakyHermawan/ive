@@ -131,6 +131,8 @@ private:
 
   std::unique_ptr<ExprAST> parseIfExpr();
 
+  std::unique_ptr<ExprAST> parseForExpr();
+
   /// Get the precedence of the pending binary operator token.
   int getTokPrecedence();
 

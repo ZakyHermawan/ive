@@ -328,6 +328,15 @@ std::unique_ptr<ExprAST> Parser::parseDeclarationOrCallExpr() {
   if (m_lexer.getCurrToken() == Token::ParentheseOpen)
     return parseCallExpr(id, loc);
 
+  // Assignment statement: `identifier = expression`.
+  if (m_lexer.getCurrToken() == Token::Equal) {
+    m_lexer.consume(Token::Equal);
+    auto value = parseExpression();
+    if (!value)
+      return parseError<ExprAST>("expression", "on right-hand side of '='");
+    return std::make_unique<AssignExprAST>(loc, id, std::move(value));
+  }
+
   // Otherwise, this is a variable declaration.
   return parseTypedDeclaration(id, /*requiresInitializer=*/true, loc);
 }
@@ -415,9 +424,9 @@ std::unique_ptr<ExprASTList> Parser::parseBlock() {
   while (m_lexer.getCurrToken() == Token::Semicolon)
     m_lexer.consume(Token::Semicolon);
 
-  bool shouldEndsWithSemiColon = true;
   while (m_lexer.getCurrToken() != Token::BracketClose &&
          m_lexer.getCurrToken() != Token::EndOfFile) {
+    bool shouldEndsWithSemiColon = true;
     if (m_lexer.getCurrToken() == Token::Identifier) {
       // Variable declaration or call
       auto expr = parseDeclarationOrCallExpr();
@@ -443,6 +452,13 @@ std::unique_ptr<ExprASTList> Parser::parseBlock() {
         return nullptr;
       }
       exprList->push_back(std::move(ifExpr));
+    } else if (m_lexer.getCurrToken() == Token::For) {
+      shouldEndsWithSemiColon = false;
+      auto forExpr = parseForExpr();
+      if (!forExpr) {
+        return nullptr;
+      }
+      exprList->push_back(std::move(forExpr));
     } else {
       // General expression
       auto expr = parseExpression();
@@ -587,12 +603,94 @@ std::unique_ptr<ExprAST> Parser::parseIfExpr() {
       loc, std::move(ifExpr), std::move(thenBlock), std::move(elseBlock));
 }
 
+std::unique_ptr<ExprAST> Parser::parseForExpr() {
+  auto loc = m_lexer.getLastLocation();
+  m_lexer.consume(Token::For);
+
+  // First operand: iterator assignment in the form "id = expr".
+  if (m_lexer.getCurrToken() != Token::Identifier) {
+    return parseError<ExprAST>("iterator variable name",
+                               "in for initializer");
+  }
+  auto iterLoc = m_lexer.getLastLocation();
+  std::string iterName(m_lexer.getId());
+  m_lexer.consume(Token::Identifier);
+  if (m_lexer.getCurrToken() != Token::Equal) {
+    return parseError<ExprAST>("=", "in for initializer assignment");
+  }
+  m_lexer.consume(Token::Equal);
+  auto initExpr = parseExpression();
+  if (!initExpr) {
+    return parseError<ExprAST>("expression", "in for initializer assignment");
+  }
+
+  VarType iterType;
+  auto iterVar = std::make_unique<VarDeclExprAST>(
+      std::move(iterLoc), iterName, std::move(iterType), std::move(initExpr));
+
+  if (m_lexer.getCurrToken() != Token::Comma) {
+    return parseError<ExprAST>(",", "after for initializer assignment");
+  }
+  m_lexer.consume(Token::Comma);
+
+  // Second operand: condition expression expected to be a comparison that
+  // yields tensor<f64> truth value semantics.
+  auto condExpr = parseExpression();
+  if (!condExpr) {
+    return parseError<ExprAST>("expression", "as for loop condition");
+  }
+
+  auto *condBin = llvm::dyn_cast<BinaryExprAST>(condExpr.get());
+  if (!condBin) {
+    return parseError<ExprAST>(
+        "comparison expression",
+        "as for loop condition (must produce tensor<f64> truth value)");
+  }
+  switch (condBin->getOp()) {
+  case Token::Eq:
+  case Token::Ne:
+  case Token::Less:
+  case Token::Greater:
+  case Token::Lt:
+  case Token::Le:
+  case Token::Gt:
+  case Token::Ge:
+    break;
+  default:
+    return parseError<ExprAST>(
+        "comparison operator",
+        "in for loop condition (use eq/ne/lt/le/gt/ge)");
+  }
+
+  if (m_lexer.getCurrToken() != Token::Comma) {
+    return parseError<ExprAST>(",", "after for loop condition");
+  }
+  m_lexer.consume(Token::Comma);
+
+  // Third operand: step expression, interpreted as "i += step".
+  auto stepExpr = parseExpression();
+  if (!stepExpr) {
+    return parseError<ExprAST>("step expression", "as third for operand");
+  }
+
+  auto body = parseBlock();
+  if (!body) {
+    return parseError<ExprAST>("{ ... }", "as for loop body");
+  }
+
+  return std::make_unique<ForExprAST>(loc, std::move(iterVar),
+                                      std::move(condExpr), std::move(stepExpr),
+                                      std::move(body));
+}
+
 int Parser::getTokPrecedence() {
   // 1 is lowest precedence.
   switch (m_lexer.getCurrToken()) {
   case Token::Eq:
   case Token::Ne:
     return 8;
+  case Token::Less:
+  case Token::Greater:
   case Token::Lt:
   case Token::Le:
   case Token::Gt:

@@ -1,0 +1,7 @@
+def main() {
+  var a = 1;
+  for i=0, i < 10, 1 {
+    print(a);
+    a = a + 1;
+  }
+}

@@ -402,6 +402,8 @@ private:
       return DivOp::create(builder, location, lhs, rhs);
     case Token::Eq:
     case Token::Ne:
+    case Token::Less:
+    case Token::Greater:
     case Token::Lt:
     case Token::Le:
     case Token::Gt:
@@ -415,6 +417,10 @@ private:
       return CmpOp::create(builder, location, lhs, rhs, "eq");
     if (binop.getOp() == Token::Ne)
       return CmpOp::create(builder, location, lhs, rhs, "ne");
+    if (binop.getOp() == Token::Less)
+      return CmpOp::create(builder, location, lhs, rhs, "lt");
+    if (binop.getOp() == Token::Greater)
+      return CmpOp::create(builder, location, lhs, rhs, "gt");
     if (binop.getOp() == Token::Lt)
       return CmpOp::create(builder, location, lhs, rhs, "lt");
     if (binop.getOp() == Token::Le)
@@ -625,6 +631,23 @@ private:
     return mlir::success();
   }
 
+  /// Emit an assignment expression by updating the value bound to a variable.
+  mlir::Value mlirGen(AssignExprAST &assign) {
+    auto bound = symbolTable.lookup(assign.getName());
+    if (!bound.first) {
+      emitError(loc(assign.loc()), "error: unknown variable '")
+          << assign.getName() << "'";
+      return nullptr;
+    }
+
+    mlir::Value value = mlirGen(*assign.getValue());
+    if (!value)
+      return nullptr;
+
+    symbolTable.insert(assign.getName(), {value, bound.second});
+    return value;
+  }
+
   /// Emit a constant for a single number (FIXME: semantic? broadcast?)
   mlir::Value mlirGen(NumberExprAST &num) {
     return ConstantOp::create(builder, loc(num.loc()), num.getValue());
@@ -645,6 +668,12 @@ private:
       return mlirGen(cast<CallExprAST>(expr));
     case ive::ExprAST::Expr_Num:
       return mlirGen(cast<NumberExprAST>(expr));
+    case ive::ExprAST::Expr_Assign:
+      return mlirGen(cast<AssignExprAST>(expr));
+    case ive::ExprAST::Expr_For:
+      emitError(loc(expr.loc()))
+          << "MLIR codegen for 'for' loops is not implemented yet";
+      return nullptr;
     default:
       emitError(loc(expr.loc()))
           << "MLIR codegen encountered an unhandled expr kind '"

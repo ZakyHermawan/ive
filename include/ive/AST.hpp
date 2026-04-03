@@ -39,6 +39,8 @@ public:
     Expr_Call,
     Expr_Print,
     Expr_If,
+    Expr_For,
+    Expr_Assign,
   };
 
   ExprAST(ExprASTKind kind, Location location)
@@ -210,6 +212,25 @@ public:
   static bool classof(const ExprAST *c) { return c->getKind() == Expr_Print; }
 };
 
+class AssignExprAST : public ExprAST {
+  std::string name;
+  std::unique_ptr<ExprAST> value;
+
+public:
+  AssignExprAST(Location loc, llvm::StringRef name,
+                std::unique_ptr<ExprAST> value)
+      : ExprAST(Expr_Assign, std::move(loc)), name(name),
+        value(std::move(value)) {}
+
+  llvm::StringRef getName() { return name; }
+  ExprAST *getValue() { return value.get(); }
+
+  /// LLVM style RTTI
+  static bool classof(const ExprAST *c) {
+    return c->getKind() == Expr_Assign;
+  }
+};
+
 class IfExprAST : public ExprAST {
   std::unique_ptr<ExprAST> cond;
   std::unique_ptr<ExprASTList> thenBlock;
@@ -228,6 +249,28 @@ public:
 
   /// LLVM style RTTI
   static bool classof(const ExprAST *c) { return c->getKind() == Expr_If; }
+};
+
+class ForExprAST : public ExprAST {
+  std::unique_ptr<VarDeclExprAST> iterVar;
+  std::unique_ptr<ExprAST> cond;
+  std::unique_ptr<ExprAST> step;
+  std::unique_ptr<ExprASTList> body;
+
+public:
+  ForExprAST(Location loc, std::unique_ptr<VarDeclExprAST> iterVar,
+             std::unique_ptr<ExprAST> cond, std::unique_ptr<ExprAST> step,
+             std::unique_ptr<ExprASTList> body)
+      : ExprAST(Expr_For, std::move(loc)), iterVar(std::move(iterVar)),
+        cond(std::move(cond)), step(std::move(step)), body(std::move(body)) {}
+
+  VarDeclExprAST *getIteratorVar() { return iterVar.get(); }
+  ExprAST *getCond() { return cond.get(); }
+  ExprAST *getStep() { return step.get(); }
+  ExprASTList *getBody() { return body.get(); }
+
+  /// LLVM style RTTI
+  static bool classof(const ExprAST *c) { return c->getKind() == Expr_For; }
 };
 
 /// This class represents the "prototype" for a function, which captures its

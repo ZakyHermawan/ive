@@ -46,7 +46,9 @@ private:
   void dump(BinaryExprAST *node);
   void dump(CallExprAST *node);
   void dump(PrintExprAST *node);
+  void dump(AssignExprAST *node);
   void dump(IfExprAST *node);
+  void dump(ForExprAST *node);
   void dump(PrototypeAST *node);
   void dump(FunctionAST *node);
   void dump(StructAST *node);
@@ -79,8 +81,9 @@ template <typename T> static std::string loc(T *node) {
 void ASTDumper::dump(ExprAST *expr) {
   llvm::TypeSwitch<ExprAST *>(expr)
       .Case<BinaryExprAST, CallExprAST, LiteralExprAST, NumberExprAST,
-            PrintExprAST, ReturnExprAST, StructLiteralExprAST, VarDeclExprAST,
-            VariableExprAST, IfExprAST>([&](auto *node) { this->dump(node); })
+            PrintExprAST, AssignExprAST, ReturnExprAST, StructLiteralExprAST,
+            VarDeclExprAST, VariableExprAST, IfExprAST, ForExprAST>(
+          [&](auto *node) { this->dump(node); })
       .Default([&](ExprAST *) {
         // No match, fallback to a generic message
         INDENT();
@@ -209,6 +212,12 @@ void ASTDumper::dump(PrintExprAST *node) {
   llvm::errs() << "]\n";
 }
 
+void ASTDumper::dump(AssignExprAST *node) {
+  INDENT();
+  llvm::errs() << "Assign " << node->getName() << " " << loc(node) << "\n";
+  dump(node->getValue());
+}
+
 /// Print type: only the shape is printed in between '<' and '>'
 void ASTDumper::dump(const VarType &type) {
   llvm::errs() << "<";
@@ -228,6 +237,15 @@ void ASTDumper::dump(IfExprAST *node) {
   if (elseBlock) {
     dump(node->getElse());
   }
+}
+
+void ASTDumper::dump(ForExprAST *node) {
+  INDENT();
+  llvm::errs() << "ForExpr: " << loc(node) << "\n";
+  dump(node->getIteratorVar());
+  dump(node->getCond());
+  dump(node->getStep());
+  dump(node->getBody());
 }
 
 /// Print a function prototype, first the function name, and then the list of
