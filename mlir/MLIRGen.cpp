@@ -217,6 +217,144 @@ private:
     return mlir::success();
   }
 
+  static std::optional<double> getConstNumberExpr(ExprAST *expr) {
+    if (auto *number = llvm::dyn_cast_or_null<NumberExprAST>(expr))
+      return number->getValue();
+    return std::nullopt;
+  }
+
+  static bool evalForPredicate(Token op, double lhs, double rhs) {
+    switch (op) {
+    case Token::Less:
+    case Token::Lt:
+      return lhs < rhs;
+    case Token::Le:
+      return lhs <= rhs;
+    case Token::Greater:
+    case Token::Gt:
+      return lhs > rhs;
+    case Token::Ge:
+      return lhs >= rhs;
+    case Token::Eq:
+      return lhs == rhs;
+    case Token::Ne:
+      return lhs != rhs;
+    default:
+      return false;
+    }
+  }
+
+  mlir::LogicalResult mlirGen(ForExprAST &forExpr) {
+    auto location = loc(forExpr.loc());
+
+    auto *iterVar = forExpr.getIteratorVar();
+    if (!iterVar || !iterVar->getInitVal())
+      return mlir::emitError(location,
+                             "error: malformed for-loop iterator variable");
+
+    auto *cond = llvm::dyn_cast<BinaryExprAST>(forExpr.getCond());
+    if (!cond)
+      return mlir::emitError(location,
+                             "error: for-loop condition must be a comparison");
+
+    auto *condLhs = llvm::dyn_cast<VariableExprAST>(cond->getLHS());
+    if (!condLhs || condLhs->getName() != iterVar->getName()) {
+      return mlir::emitError(location,
+                             "error: for-loop condition lhs must be iterator "
+                             "variable");
+    }
+
+    // If loop bounds and step are compile-time constants, execute the loop
+    // structure at codegen time to preserve assignment semantics naturally.
+    auto initConst = getConstNumberExpr(iterVar->getInitVal());
+    auto upperConst = getConstNumberExpr(cond->getRHS());
+    auto stepConst = getConstNumberExpr(forExpr.getStep());
+    if (initConst && upperConst && stepConst && *stepConst != 0.0) {
+      constexpr int64_t kMaxUnrolledIterations = 1000000;
+      int64_t iterCount = 0;
+      double iter = *initConst;
+
+      while (evalForPredicate(cond->getOp(), iter, *upperConst)) {
+        if (iterCount++ >= kMaxUnrolledIterations) {
+          return mlir::emitError(location,
+                                 "error: for-loop exceeded maximum unrolled "
+                                 "iterations (1000000)");
+        }
+
+        mlir::Value iterValue = ConstantOp::create(builder, location, iter);
+        symbolTable.insert(iterVar->getName(), {iterValue, iterVar});
+
+        if (failed(mlirGenNoScope(*forExpr.getBody())))
+          return mlir::failure();
+
+        iter += *stepConst;
+      }
+      return mlir::success();
+    }
+
+    mlir::Value lowerBound = mlirGen(*iterVar->getInitVal());
+    if (!lowerBound)
+      return mlir::failure();
+
+    mlir::Value upperBound = mlirGen(*cond->getRHS());
+    if (!upperBound)
+      return mlir::failure();
+
+    mlir::Value step = mlirGen(*forExpr.getStep());
+    if (!step)
+      return mlir::failure();
+
+    StringRef predicate;
+    switch (cond->getOp()) {
+    case Token::Less:
+    case Token::Lt:
+      predicate = "lt";
+      break;
+    case Token::Le:
+      predicate = "le";
+      break;
+    case Token::Greater:
+    case Token::Gt:
+      predicate = "gt";
+      break;
+    case Token::Ge:
+      predicate = "ge";
+      break;
+    case Token::Eq:
+      predicate = "eq";
+      break;
+    case Token::Ne:
+      predicate = "ne";
+      break;
+    default:
+      return mlir::emitError(location,
+                             "error: unsupported for-loop condition predicate");
+    }
+
+    auto forOp = ForOp::create(builder, location, lowerBound, upperBound, step,
+                               predicate);
+
+    auto &body = forOp.getBody();
+    auto *bodyBlock = new mlir::Block();
+    body.push_back(bodyBlock);
+    bodyBlock->addArgument(lowerBound.getType(), location);
+
+    builder.setInsertionPointToStart(bodyBlock);
+    symbolTable.insert(iterVar->getName(), {bodyBlock->getArgument(0), iterVar});
+    if (failed(mlirGen(*forExpr.getBody())))
+      return mlir::failure();
+
+    if (bodyBlock->empty() ||
+        !bodyBlock->back().hasTrait<mlir::OpTrait::IsTerminator>()) {
+      builder.setInsertionPointToEnd(bodyBlock);
+      YieldOp::create(builder, location);
+    }
+
+    builder.setInsertionPointAfter(forOp);
+
+    return mlir::success();
+  }
+
   /// Create the prototype for an MLIR function with as many arguments as the
   /// provided Ive AST prototype.
   mlir::ive::FuncOp mlirGen(PrototypeAST &proto) {
@@ -670,10 +808,6 @@ private:
       return mlirGen(cast<NumberExprAST>(expr));
     case ive::ExprAST::Expr_Assign:
       return mlirGen(cast<AssignExprAST>(expr));
-    case ive::ExprAST::Expr_For:
-      emitError(loc(expr.loc()))
-          << "MLIR codegen for 'for' loops is not implemented yet";
-      return nullptr;
     default:
       emitError(loc(expr.loc()))
           << "MLIR codegen encountered an unhandled expr kind '"
@@ -763,12 +897,57 @@ private:
         builder.setInsertionPointToEnd(parentBlock);
         continue;
       }
+      // For statement
+      if (auto *forExpr = dyn_cast<ForExprAST>(expr.get())) {
+        if (mlir::failed(mlirGen(*forExpr)))
+          return mlir::failure();
+        continue;
+      }
       // Generic expression dispatch codegen.
       if (!mlirGen(*expr))
         return mlir::failure();
     }
     // Do not emit a terminator (yield/return) here; let the parent (if/else or
     // function) handle it.
+    return mlir::success();
+  }
+
+  /// Codegen a list of expressions without introducing a new symbol scope.
+  /// This is used for loop-unrolled bodies so assignments can carry to the
+  /// next iteration and after the loop.
+  llvm::LogicalResult mlirGenNoScope(ExprASTList &blockAST) {
+    for (auto it = blockAST.begin(); it != blockAST.end(); ++it) {
+      auto &expr = *it;
+      if (auto *vardecl = dyn_cast<VarDeclExprAST>(expr.get())) {
+        if (!mlirGen(*vardecl))
+          return mlir::failure();
+        continue;
+      }
+      if (auto *ret = dyn_cast<ReturnExprAST>(expr.get())) {
+        if (std::next(it) == blockAST.end())
+          return mlirGen(*ret);
+        continue;
+      }
+      if (auto *print = dyn_cast<PrintExprAST>(expr.get())) {
+        if (mlir::failed(mlirGen(*print)))
+          return mlir::success();
+        continue;
+      }
+      if (auto *ifExpr = dyn_cast<IfExprAST>(expr.get())) {
+        auto *parentBlock = builder.getInsertionBlock();
+        if (mlir::failed(mlirGen(*ifExpr)))
+          return mlir::failure();
+        builder.setInsertionPointToEnd(parentBlock);
+        continue;
+      }
+      if (auto *forExpr = dyn_cast<ForExprAST>(expr.get())) {
+        if (mlir::failed(mlirGen(*forExpr)))
+          return mlir::failure();
+        continue;
+      }
+      if (!mlirGen(*expr))
+        return mlir::failure();
+    }
     return mlir::success();
   }
 

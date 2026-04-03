@@ -64,6 +64,55 @@ struct ConvertIf : public OpConversionPattern<IfOp> {
   }
 };
 
+struct ConvertFor : public OpConversionPattern<ForOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ForOp forOp, OpAdaptor opAdaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    if (forOp.getPredicate() != "lt") {
+      return rewriter.notifyMatchFailure(
+          forOp, "only predicate 'lt' is currently supported");
+    }
+
+    Location loc = forOp.getLoc();
+
+    auto toIndex = [&](Value tensorValue) -> Value {
+      Value scalar =
+          tensor::ExtractOp::create(rewriter, loc, tensorValue, ValueRange{});
+      Value i64Val =
+          arith::FPToSIOp::create(rewriter, loc, rewriter.getI64Type(), scalar);
+      return arith::IndexCastOp::create(rewriter, loc, rewriter.getIndexType(),
+                                        i64Val);
+    };
+
+    Value lowerBound = toIndex(opAdaptor.getLowerBound());
+    Value upperBound = toIndex(opAdaptor.getUpperBound());
+    Value step = toIndex(opAdaptor.getStep());
+
+    auto scfFor =
+        scf::ForOp::create(rewriter, loc, lowerBound, upperBound, step);
+    Block *dstBody = scfFor.getBody();
+
+    rewriter.setInsertionPointToStart(dstBody);
+    Value ivI64 = arith::IndexCastOp::create(rewriter, loc, rewriter.getI64Type(),
+                                             scfFor.getInductionVar());
+    Value ivF64 =
+        arith::SIToFPOp::create(rewriter, loc, rewriter.getF64Type(), ivI64);
+    auto scalarTensorTy = RankedTensorType::get({}, rewriter.getF64Type());
+    Value ivTensor =
+      tensor::SplatOp::create(rewriter, loc, scalarTensorTy, ivF64);
+
+    rewriter.eraseOp(dstBody->getTerminator());
+    Block *srcBody = &forOp.getBody().front();
+    rewriter.inlineBlockBefore(srcBody, dstBody, dstBody->end(),
+                               ValueRange{ivTensor});
+
+    rewriter.eraseOp(forOp);
+    return success();
+  }
+};
+
 struct IveToSCF : impl::IveToSCFBase<IveToSCF> {
   using IveToSCFBase::IveToSCFBase;
 
@@ -71,13 +120,14 @@ struct IveToSCF : impl::IveToSCFBase<IveToSCF> {
     MLIRContext *context = &getContext();
     auto *module = getOperation();
     ConversionTarget target(*context);
-    // Convert ive.if and ive.yield, keep all other ops legal for this pass.
-    target.addIllegalOp<IfOp, YieldOp>();
+    // Convert ive.if/ive.for/ive.yield and keep all other ops legal.
+    target.addIllegalOp<IfOp, ForOp, YieldOp>();
     target.markUnknownOpDynamicallyLegal([](Operation *) { return true; });
 
     RewritePatternSet patterns(context);
     IveToSCFTypeConverter typeConverter(context);
     patterns.add<ConvertIf>(typeConverter, context);
+    patterns.add<ConvertFor>(typeConverter, context);
     patterns.add<ConvertYield>(context);
 
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {

@@ -585,6 +585,29 @@ llvm::LogicalResult IfOp::verify() {
   return mlir::success();
 }
 
+llvm::LogicalResult ForOp::verify() {
+  auto pred = getPredicate();
+  if (pred != "lt")
+    return emitOpError("currently only supports predicate \"lt\"");
+
+  if (getBody().empty())
+    return emitOpError("must have a non-empty body region");
+
+  auto &block = getBody().front();
+  if (block.getNumArguments() != 1)
+    return emitOpError("body must have exactly one iterator argument");
+
+  auto iterTy = block.getArgument(0).getType();
+  if (iterTy != getLowerBound().getType())
+    return emitOpError("iterator argument type must match lowerBound type");
+  if (getUpperBound().getType() != getLowerBound().getType())
+    return emitOpError("upperBound type must match lowerBound type");
+  if (getStep().getType() != getLowerBound().getType())
+    return emitOpError("step type must match lowerBound type");
+
+  return mlir::success();
+}
+
 //===----------------------------------------------------------------------===//
 // StructAccessOp
 //===----------------------------------------------------------------------===//

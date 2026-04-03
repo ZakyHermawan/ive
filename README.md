@@ -134,6 +134,51 @@ def main() {
 }
 ```
 
+### For Loop
+
+Ive supports a 3-operand `for` loop form:
+
+```ive
+for i = <init>, <condition>, <step> {
+  ...
+}
+```
+
+Rules:
+
+- First operand (`i = <init>`) must be an iterator assignment.
+- Second operand must be a comparison expression (for example `i < 10`,
+  `i lt n`, `i le n`, etc.) producing Ive truth semantics.
+- Third operand is the step expression used as `i += step` each iteration.
+
+Example:
+
+```ive
+def main() {
+  var a = 1;
+  for i=0, i < 10, 1 {
+    print(a);
+    a = a + 1;
+  }
+}
+```
+
+Run it with JIT:
+
+```bash
+./build/ive examples/for.ive -emit=jit
+```
+
+Current behavior note:
+
+- Constant-bound loops (for example `for i=0, i < 10, 1`) execute with
+  loop-carried assignment behavior in codegen, so updates like `a = a + 1`
+  affect later iterations.
+- Dynamic-bound loops (for example `for i=0, i < n, 1`) are emitted as
+  `ive.for` and lowered through control-flow passes. At the moment, full
+  loop-carried variable update semantics for arbitrary reassigned variables are
+  still evolving.
+
 ### Struct Types
 
 ```ive

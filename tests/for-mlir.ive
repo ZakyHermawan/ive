@@ -1,0 +1,20 @@
+# RUN: %ive %s -emit=mlir 2>&1 | FileCheck %s
+
+# CHECK-LABEL:   ive.func @main() {
+# CHECK-DAG:       ive.constant dense<0.000000e+00> : tensor<f64>
+# CHECK-DAG:       ive.constant dense<3.000000e+00> : tensor<f64>
+# CHECK:           "ive.for"(%{{.*}}, %{{.*}}, %{{.*}}) <{predicate = "lt"}>
+# CHECK:           ^bb0(%[[IV:.*]]: tensor<f64>):
+# CHECK:             ive.print
+# CHECK:             "ive.yield"() : () -> ()
+# CHECK:           ive.return
+# CHECK:         }
+
+def main() {
+  var n = 3;
+  var a = 1;
+  for i=0, i < n, 1 {
+    print(a);
+    a = a + 1;
+  }
+}

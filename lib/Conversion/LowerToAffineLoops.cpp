@@ -5,6 +5,8 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinDialect.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -307,6 +309,43 @@ struct ReturnOpLowering : public OpConversionPattern<ive::ReturnOp> {
   }
 };
 
+struct TensorExtractOpLowering : public OpConversionPattern<tensor::ExtractOp> {
+  using OpConversionPattern<tensor::ExtractOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(tensor::ExtractOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    auto memrefTy = llvm::dyn_cast<MemRefType>(adaptor.getTensor().getType());
+    if (!memrefTy || memrefTy.getRank() != 0 || !adaptor.getIndices().empty())
+      return rewriter.notifyMatchFailure(
+          op, "expected rank-0 memref tensor.extract with no indices");
+
+    rewriter.replaceOpWithNewOp<affine::AffineLoadOp>(
+        op, adaptor.getTensor(), ValueRange{});
+    return success();
+  }
+};
+
+struct TensorSplatOpLowering : public OpConversionPattern<tensor::SplatOp> {
+  using OpConversionPattern<tensor::SplatOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(tensor::SplatOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    auto rankedTy = llvm::dyn_cast<RankedTensorType>(op.getType());
+    if (!rankedTy || rankedTy.getRank() != 0)
+      return rewriter.notifyMatchFailure(
+          op, "expected rank-0 tensor.splat during affine lowering");
+
+    auto memRefType = convertTensorToMemRef(rankedTy);
+    auto alloc = insertAllocAndDealloc(memRefType, op.getLoc(), rewriter);
+    affine::AffineStoreOp::create(rewriter, op.getLoc(), adaptor.getInput(),
+                                  alloc, ValueRange{});
+    rewriter.replaceOp(op, alloc);
+    return success();
+  }
+};
+
 //===----------------------------------------------------------------------===//
 // IveToAffine Conversion Patterns: Transpose operations
 //===----------------------------------------------------------------------===//
@@ -363,7 +402,8 @@ void IveToAffineLoweringPass::runOnOperation() {
   // `Affine`, `Arith`, `Func`, and `MemRef` dialects.
   target.addLegalDialect<affine::AffineDialect, BuiltinDialect,
                          arith::ArithDialect, func::FuncDialect,
-                         memref::MemRefDialect>();
+                         memref::MemRefDialect, scf::SCFDialect,
+                         tensor::TensorDialect>();
 
   // We also define the Ive dialect as Illegal so that the conversion will fail
   // if any of these operations are *not* converted. Given that we actually want
@@ -372,6 +412,7 @@ void IveToAffineLoweringPass::runOnOperation() {
   // to be updated though (as we convert from TensorType to MemRefType), so we
   // only treat it as `legal` if its operands are legal.
   target.addIllegalDialect<ive::IveDialect>();
+  target.addIllegalOp<tensor::ExtractOp, tensor::SplatOp>();
   target.addDynamicallyLegalOp<ive::PrintOp>([](ive::PrintOp op) {
     return llvm::none_of(op->getOperandTypes(),
                          [](Type type) { return llvm::isa<TensorType>(type); });
@@ -382,7 +423,9 @@ void IveToAffineLoweringPass::runOnOperation() {
   RewritePatternSet patterns(&getContext());
   patterns.add<AddOpLowering, SubOpLowering, ConstantOpLowering, FuncOpLowering,
                MulOpLowering, DivOpLowering, CmpOpLowering, PrintOpLowering,
-               ReturnOpLowering, TransposeOpLowering>(&getContext());
+               ReturnOpLowering, TransposeOpLowering,
+               TensorSplatOpLowering,
+               TensorExtractOpLowering>(&getContext());
 
   // With the target and rewrite patterns defined, we can now attempt the
   // conversion. The conversion will signal failure if any of our `illegal`

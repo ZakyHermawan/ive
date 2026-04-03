@@ -465,13 +465,38 @@ def IfOp : Ive_Op<"if", [RecursiveMemoryEffects, NoRegionArguments, SingleBlock]
 }
 
 //===----------------------------------------------------------------------===//
+// ForOp
+//===----------------------------------------------------------------------===//
+
+def ForOp : Ive_Op<"for", [RecursiveMemoryEffects, SingleBlock,
+                            SingleBlockImplicitTerminator<"YieldOp">]> {
+  let summary = "for loop operation";
+  let description = [{
+    Represents a counted loop. The operation carries:
+      - lower bound (initial iterator value)
+      - upper bound
+      - step
+      - comparison predicate (currently lowered as lt)
+
+    The body region contains one block argument for the iterator value, with
+    the same tensor<f64> type as the loop bounds.
+  }];
+
+  let arguments = (ins F64Tensor:$lowerBound, F64Tensor:$upperBound,
+                       F64Tensor:$step, StrAttr:$predicate);
+  let regions = (region SizedRegion<1>:$body);
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // YieldOp
 //===----------------------------------------------------------------------===//
 
-def YieldOp : Ive_Op<"yield", [Pure, Terminator, HasParent<"IfOp">]> {
+def YieldOp : Ive_Op<"yield", [Pure, Terminator]> {
   let summary = "termination operation";
   let description = [{
-    Currently, just to terminate IfOp and not doing anything else
+    Terminates region-based control-flow operations in the ive dialect.
   }];
 
   let arguments = (ins);
