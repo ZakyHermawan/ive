@@ -192,12 +192,14 @@ private:
     if (mlir::failed(mlirGen(*ifExpr.getThen()))) {
       return mlir::failure();
     }
+
     // Only insert ive.yield if needed
     if (thenBlock->empty() ||
         !thenBlock->back().hasTrait<mlir::OpTrait::IsTerminator>()) {
       builder.setInsertionPointToEnd(thenBlock);
       mlir::ive::YieldOp::create(builder, location);
     }
+
     if (elseExpr && !elseExpr->empty()) {
       auto *elseBlock = &ifOp.getElseRegion().back();
       builder.setInsertionPointToStart(elseBlock);
@@ -211,18 +213,7 @@ private:
         mlir::ive::YieldOp::create(builder, location);
       }
     }
-    // Do NOT insert a yield in the parent block after the if/else.
-    return mlir::success();
 
-    // if (auto elseExpr = ifExpr.getElse()) {
-    //   auto *elseBlock = &ifOp.getElseRegion().back();
-    //   builder.setInsertionPointToStart(elseBlock);
-    //   if (mlir::failed(mlirGen(*elseExpr))) {
-    //     return mlir::failure();
-    //   }
-    //   builder.setInsertionPointToEnd(elseBlock);
-    //   mlir::ive::YieldOp::create(builder, location);
-    // }
     return mlir::success();
   }
 

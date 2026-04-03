@@ -1,7 +1,7 @@
 #include "IveToSCF.hpp"
 
 #include "ive/Dialect.hpp"
-#include "mlir/Transforms/DialectConversion.h"  // from @llvm-project
+#include "mlir/Transforms/DialectConversion.h"
 
 namespace mlir {
 namespace ive {
@@ -17,50 +17,51 @@ public:
 };
 
 struct ConvertYield : public OpRewritePattern<YieldOp> {
-  ConvertYield(MLIRContext *context)
-    : OpRewritePattern<YieldOp>(context) {}
+  ConvertYield(MLIRContext *context) : OpRewritePattern<YieldOp>(context) {}
 
-  LogicalResult matchAndRewrite(
-    YieldOp yieldOp, PatternRewriter &rewriter) const override {
-      rewriter.replaceOpWithNewOp<scf::YieldOp>(yieldOp);
-      return success();
-    }
+  LogicalResult matchAndRewrite(YieldOp yieldOp,
+                                PatternRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<scf::YieldOp>(yieldOp);
+    return success();
+  }
 };
 
 struct ConvertIf : public OpConversionPattern<IfOp> {
   using OpConversionPattern::OpConversionPattern;
 
-  LogicalResult matchAndRewrite(
-    IfOp ifOp, OpAdaptor opAdaptor,
-    ConversionPatternRewriter &rewriter) const override {
-      Location loc = ifOp.getLoc();
-      Value conditionTensor = opAdaptor.getCondition();
+  LogicalResult
+  matchAndRewrite(IfOp ifOp, OpAdaptor opAdaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Location loc = ifOp.getLoc();
+    Value conditionTensor = opAdaptor.getCondition();
 
-      Value element = tensor::ExtractOp::create(rewriter, loc, conditionTensor, ValueRange{});
-      Value zero = arith::ConstantFloatOp::create(rewriter, loc, rewriter.getF64Type(), llvm::APFloat(0.0));
+    Value element =
+        tensor::ExtractOp::create(rewriter, loc, conditionTensor, ValueRange{});
+    Value zero = arith::ConstantFloatOp::create(
+        rewriter, loc, rewriter.getF64Type(), llvm::APFloat(0.0));
 
-      auto cmp = arith::CmpFOp::create(
-          rewriter, loc, arith::CmpFPredicate::UNE, element, zero);
-      Value condition = cmp.getResult();
+    auto cmp = arith::CmpFOp::create(rewriter, loc, arith::CmpFPredicate::UNE,
+                                     element, zero);
+    Value condition = cmp.getResult();
 
-      bool hasElseRegion = !ifOp.getElseRegion().empty();
-      auto scfIf = scf::IfOp::create(rewriter, loc, condition, hasElseRegion);
+    bool hasElseRegion = !ifOp.getElseRegion().empty();
+    auto scfIf = scf::IfOp::create(rewriter, loc, condition, hasElseRegion);
 
-      Block *srcThen = &ifOp.getThenRegion().front();
-      Block *dstThen = &scfIf.getThenRegion().front();
-      rewriter.eraseOp(dstThen->getTerminator());
-      rewriter.inlineBlockBefore(srcThen, dstThen, dstThen->end());
+    Block *srcThen = &ifOp.getThenRegion().front();
+    Block *dstThen = &scfIf.getThenRegion().front();
+    rewriter.eraseOp(dstThen->getTerminator());
+    rewriter.inlineBlockBefore(srcThen, dstThen, dstThen->end());
 
-      if (hasElseRegion) {
-        Block *srcElse = &ifOp.getElseRegion().front();
-        Block *dstElse = &scfIf.getElseRegion().front();
-        rewriter.eraseOp(dstElse->getTerminator());
-        rewriter.inlineBlockBefore(srcElse, dstElse, dstElse->end());
-      }
-
-      rewriter.eraseOp(ifOp);
-      return success();
+    if (hasElseRegion) {
+      Block *srcElse = &ifOp.getElseRegion().front();
+      Block *dstElse = &scfIf.getElseRegion().front();
+      rewriter.eraseOp(dstElse->getTerminator());
+      rewriter.inlineBlockBefore(srcElse, dstElse, dstElse->end());
     }
+
+    rewriter.eraseOp(ifOp);
+    return success();
+  }
 };
 
 struct IveToSCF : impl::IveToSCFBase<IveToSCF> {
@@ -85,5 +86,5 @@ struct IveToSCF : impl::IveToSCFBase<IveToSCF> {
   }
 };
 
-}  // namespace ive
-}  // namespace mlir
+} // namespace ive
+} // namespace mlir

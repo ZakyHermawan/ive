@@ -3,9 +3,9 @@
 #include <mlir/Pass/Pass.h>
 
 // Extra includes needed for dependent dialects
-#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Tensor/IR/Tensor.h> 
+#include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
 
 namespace mlir {
 namespace ive {
@@ -16,5 +16,5 @@ namespace ive {
 #define GEN_PASS_REGISTRATION
 #include "IveToSCF.hpp.inc"
 
-}  // namespace ive
-}  // namespace mlir
+} // namespace ive
+} // namespace mlir
