@@ -1,0 +1,5 @@
+# RUN: not %ive %s -emit=mlir 2>&1 | FileCheck %s
+# CHECK: integer scalar requires an integer literal
+def main() {
+  var value : i32 = 1.5;
+}

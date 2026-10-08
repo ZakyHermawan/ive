@@ -228,7 +228,18 @@ static llvm::LogicalResult verifyConstantForType(mlir::Type type,
     }
     return mlir::success();
   }
-  auto resultType = llvm::cast<StructType>(type);
+  if (type.isInteger(1) || type.isInteger(32) || type.isInteger(64) ||
+      type.isF64()) {
+    auto attrValue = llvm::dyn_cast<TypedAttr>(opaqueValue);
+    if (!attrValue || attrValue.getType() != type ||
+        !llvm::isa<IntegerAttr, FloatAttr>(opaqueValue))
+      return op->emitOpError("scalar initializer attribute must match type ")
+             << type;
+    return success();
+  }
+  auto resultType = llvm::dyn_cast<StructType>(type);
+  if (!resultType)
+    return op->emitOpError("unsupported constant type ") << type;
   llvm::ArrayRef<mlir::Type> resultElementTypes = resultType.getElementTypes();
 
   // Verify that the initializer is an Array.
@@ -248,8 +259,14 @@ static llvm::LogicalResult verifyConstantForType(mlir::Type type,
 
 /// Verifier for the constant operation. This corresponds to the `::verify(...)`
 /// in the op definition.
-llvm::LogicalResult ConstantOp::verify() {
+LogicalResult ConstantOp::verify() {
   return verifyConstantForType(getResult().getType(), getValue(), *this);
+}
+
+LogicalResult ScalarConstantOp::verify() {
+  if (!llvm::isa<IntegerAttr, FloatAttr>(getValue()))
+    return emitOpError("requires an integer or floating-point attribute");
+  return success();
 }
 
 llvm::LogicalResult StructConstantOp::verify() {
@@ -310,7 +327,7 @@ void SubOp::inferShapes() { getResult().setType(getLhs().getType()); }
 
 void CmpOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
                   mlir::Value lhs, mlir::Value rhs, StringRef predicate) {
-  state.addTypes(lhs.getType());
+  state.addTypes(builder.getI1Type());
   state.addOperands({lhs, rhs});
   state.addAttribute("predicate", builder.getStringAttr(predicate));
 }
@@ -323,6 +340,11 @@ mlir::ParseResult CmpOp::parse(mlir::OpAsmParser &parser,
 void CmpOp::print(mlir::OpAsmPrinter &p) { printBinaryOp(p, *this); }
 
 llvm::LogicalResult CmpOp::verify() {
+  for (auto type : getOperandTypes()) {
+    if (auto ranked = llvm::dyn_cast<RankedTensorType>(type))
+      if (ranked.getRank() != 0)
+        return emitOpError("comparison operands must be rank-0 f64 tensors");
+  }
   auto predicate = getPredicate();
   if (predicate == "lt" || predicate == "le" || predicate == "gt" ||
       predicate == "ge" || predicate == "eq" || predicate == "ne")
@@ -330,10 +352,6 @@ llvm::LogicalResult CmpOp::verify() {
 
   return emitOpError("invalid comparison predicate '") << predicate << "'";
 }
-
-/// Infer the output shape of the CmpOp, this is required by the shape
-/// inference interface.
-void CmpOp::inferShapes() { getResult().setType(getLhs().getType()); }
 
 //===----------------------------------------------------------------------===//
 // CastOp
@@ -552,37 +570,32 @@ void IfOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
 
 mlir::ParseResult IfOp::parse(mlir::OpAsmParser &parser,
                               mlir::OperationState &result) {
+  mlir::OpAsmParser::UnresolvedOperand condition;
+  if (parser.parseOperand(condition) ||
+      parser.parseOptionalAttrDictWithKeyword(result.attributes) ||
+      parser.resolveOperand(condition, parser.getBuilder().getI1Type(),
+                            result.operands))
+    return failure();
+  auto *thenRegion = result.addRegion();
+  auto *elseRegion = result.addRegion();
+  if (parser.parseRegion(*thenRegion))
+    return failure();
+  if (succeeded(parser.parseOptionalKeyword("else")) &&
+      parser.parseRegion(*elseRegion))
+    return failure();
   return success();
 }
 
 void IfOp::print(mlir::OpAsmPrinter &printer) {
   printer << " " << getOperation()->getOperand(0);
   // Print optional attributes (if any, except the default ones)
-  printer.printOptionalAttrDict((*this)->getAttrs());
+  printer.printOptionalAttrDictWithKeyword((*this)->getAttrs());
   printer << " ";
   printer.printRegion(getThenRegion(), /*printEntryBlockArgs=*/false);
   if (!getElseRegion().empty()) {
     printer << " else ";
     printer.printRegion(getElseRegion(), /*printEntryBlockArgs=*/false);
   }
-}
-
-llvm::LogicalResult IfOp::verify() {
-  auto condType = llvm::dyn_cast<TensorType>(getCondition().getType());
-  if (!condType)
-    return emitOpError("condition must be a tensor type");
-
-  // Allow unranked tensors before shape inference; enforce scalar when ranked.
-  if (auto rankedCond = llvm::dyn_cast<RankedTensorType>(condType)) {
-    if (rankedCond.getRank() != 0)
-      return emitOpError("condition must be a 0-dimensional tensor, got rank ")
-             << rankedCond.getRank();
-  }
-
-  if (!llvm::isa<Float64Type>(condType.getElementType()))
-    return emitOpError("condition tensor element type must be f64");
-
-  return mlir::success();
 }
 
 llvm::LogicalResult ForOp::verify() {
@@ -830,6 +843,16 @@ mlir::Operation *IveDialect::materializeConstant(mlir::OpBuilder &builder,
   if (llvm::isa<StructType>(type))
     return StructConstantOp::create(builder, loc, type,
                                     llvm::cast<mlir::ArrayAttr>(value));
+  if (type.isInteger(1) || type.isInteger(32) || type.isInteger(64) ||
+      type.isF64()) {
+    auto typedValue = llvm::dyn_cast<mlir::TypedAttr>(value);
+    if (!typedValue || typedValue.getType() != type ||
+        !llvm::isa<IntegerAttr, FloatAttr>(value))
+      return nullptr;
+    return ScalarConstantOp::create(builder, loc, typedValue);
+  }
+  if (!llvm::isa<TensorType>(type) || !llvm::isa<DenseFPElementsAttr>(value))
+    return nullptr;
   return ConstantOp::create(builder, loc, type,
                             llvm::cast<mlir::DenseElementsAttr>(value));
 }

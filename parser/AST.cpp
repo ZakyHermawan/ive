@@ -115,7 +115,7 @@ void ASTDumper::dump(ExprASTList *exprList) {
 /// A literal number, just print the value.
 void ASTDumper::dump(NumberExprAST *num) {
   INDENT();
-  llvm::errs() << num->getValue() << " " << loc(num) << "\n";
+  llvm::errs() << num->getSpelling() << " " << loc(num) << "\n";
 }
 
 /// Helper to print recursively a literal. This handles nested array like:
@@ -125,7 +125,7 @@ void ASTDumper::dump(NumberExprAST *num) {
 static void printLitHelper(ExprAST *litOrNum) {
   // Inside a literal expression we can have either a number or another literal
   if (auto *num = llvm::dyn_cast<NumberExprAST>(litOrNum)) {
-    llvm::errs() << num->getValue();
+    llvm::errs() << num->getSpelling();
     return;
   }
   auto *literal = llvm::cast<LiteralExprAST>(litOrNum);
@@ -220,6 +220,25 @@ void ASTDumper::dump(AssignExprAST *node) {
 
 /// Print type: only the shape is printed in between '<' and '>'
 void ASTDumper::dump(const VarType &type) {
+  if (type.typeKind != TypeKind::Tensor) {
+    switch (type.typeKind) {
+    case TypeKind::I1:
+      llvm::errs() << ": i1";
+      break;
+    case TypeKind::I32:
+      llvm::errs() << ": i32";
+      break;
+    case TypeKind::I64:
+      llvm::errs() << ": i64";
+      break;
+    case TypeKind::F64:
+      llvm::errs() << ": f64";
+      break;
+    case TypeKind::Tensor:
+      break;
+    }
+    return;
+  }
   llvm::errs() << "<";
   if (!type.name.empty())
     llvm::errs() << type.name;

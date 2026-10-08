@@ -1,0 +1,57 @@
+# RUN: %ive %s -emit=mlir 2>&1 | FileCheck %s --check-prefix=IR
+# RUN: %ive %s -emit=mlir --opt 2>&1 | FileCheck %s --check-prefix=IR
+# RUN: %ive %s -emit=mlir-affine 2>&1 | FileCheck %s --check-prefix=AFFINE
+# RUN: %ive %s -emit=mlir-llvm 2>&1 | FileCheck %s --check-prefix=LLVM
+# RUN: %ive %s -emit=mlir 2> %t.mlir
+# RUN: %ive %t.mlir -emit=jit | FileCheck %s --check-prefix=JIT
+# RUN: %ive %s -emit=jit | FileCheck %s --check-prefix=JIT
+
+# IR-DAG: ive.scalar_constant true
+# IR-DAG: ive.scalar_constant false
+# IR-DAG: ive.scalar_constant -2147483648 : i32
+# IR-DAG: ive.scalar_constant 2147483647 : i32
+# IR-DAG: ive.scalar_constant 9007199254740993 : i64
+# IR-DAG: ive.scalar_constant -9223372036854775808 : i64
+# IR-DAG: ive.scalar_constant 9223372036854775807 : i64
+# IR-DAG: ive.scalar_constant 1.250000e+00 : f64
+# IR-DAG: ive.scalar_constant 2.000000e+00 : f64
+# IR-DAG: ive.constant dense<[1.000000e+00, 2.000000e+00]> : tensor<2xf64>
+# AFFINE-DAG: arith.constant true
+# AFFINE-DAG: arith.constant 9007199254740993 : i64
+# AFFINE-NOT: ive.scalar_constant
+# LLVM: llvm.func @main()
+# LLVM-NOT: ive.scalar_constant
+# LLVM: llvm.call @printf
+# JIT: 1
+# JIT-NEXT: 0
+# JIT-NEXT: -2147483648
+# JIT-NEXT: 2147483647
+# JIT-NEXT: 9007199254740993
+# JIT-NEXT: -9223372036854775808
+# JIT-NEXT: 9223372036854775807
+# JIT-NEXT: 1.250000
+# JIT-NEXT: 2.000000
+# JIT-NEXT: 1.000000 2.000000
+
+def main() {
+  var yes : i1 = 1;
+  var no : i1 = 0;
+  var min32 : i32 = -2147483648;
+  var max32 : i32 = 2147483647;
+  var precise : i64 = 9007199254740993;
+  var min64 : i64 = -9223372036854775808;
+  var max64 : i64 = 9223372036854775807;
+  var fraction : f64 = 1.25;
+  var whole : f64 = 2;
+  var tensor = [1, 2];
+  print(yes);
+  print(no);
+  print(min32);
+  print(max32);
+  print(precise);
+  print(min64);
+  print(max64);
+  print(fraction);
+  print(whole);
+  print(tensor);
+}

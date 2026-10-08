@@ -33,16 +33,7 @@ struct ConvertIf : public OpConversionPattern<IfOp> {
   matchAndRewrite(IfOp ifOp, OpAdaptor opAdaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Location loc = ifOp.getLoc();
-    Value conditionTensor = opAdaptor.getCondition();
-
-    Value element =
-        tensor::ExtractOp::create(rewriter, loc, conditionTensor, ValueRange{});
-    Value zero = arith::ConstantFloatOp::create(
-        rewriter, loc, rewriter.getF64Type(), llvm::APFloat(0.0));
-
-    auto cmp = arith::CmpFOp::create(rewriter, loc, arith::CmpFPredicate::UNE,
-                                     element, zero);
-    Value condition = cmp.getResult();
+    Value condition = opAdaptor.getCondition();
 
     bool hasElseRegion = !ifOp.getElseRegion().empty();
     auto scfIf = scf::IfOp::create(rewriter, loc, condition, hasElseRegion);

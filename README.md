@@ -99,7 +99,19 @@ cmake --build build
 ```ive
 var a = [[1, 2, 3], [4, 5, 6]];         # Inferred shape: <2x3>
 var b<2, 3> = [1, 2, 3, 4, 5, 6];      # Explicit shape annotation
+var flag : i1 = 1;                     # Boolean scalar: 0 or 1
+var count : i32 = 42;                  # Signed 32-bit integer scalar
+var large : i64 = 9007199254740993;     # Signed 64-bit integer scalar
+var fraction : f64 = 0.1;              # Double-precision scalar
 ```
+
+Scalar annotations select native MLIR `i1`, `i32`, `i64`, and `f64` values.
+Integer literals are checked against the declared type's range. Scalar
+arithmetic, comparisons, assignment, and `print()` are supported; operands must
+have matching types, and comparisons produce `i1`. Function parameters can use
+the same syntax, such as `def increment(x : i32)`. Untyped numeric literals
+retain the existing rank-0 `tensor<f64>` behavior, and tensor literals retain
+their existing shape syntax.
 
 ### Function Definition
 
@@ -111,24 +123,24 @@ def multiply_transpose(a, b) {
 
 ### If Expression
 
-The condition of an `if` expression must be a 0-dimensional tensor (`tensor<f64>`).
-This means the condition is a scalar tensor value (a 0-dimensional tensor),
-not a 1-D vector tensor like `tensor<1xf64>` or a ranked tensor like
-`tensor<2x2xf64>`.
+The condition of an `if` expression must be an `i1` scalar. Comparisons of
+numeric scalars or rank-0 `tensor<f64>` values return `i1`. Numeric values and
+tensors cannot be used directly as conditions; use a comparison or an explicitly
+declared `i1` variable.
 
 ```ive
 def main() {
   var a = 1;
   var b = 2;
 
-  if a {
+  if (a < b) {
     print(a);
   }
   else {
     print(b);
   }
 
-  if (b) {
+  if (b > a) {
     print(b);
   }
 }

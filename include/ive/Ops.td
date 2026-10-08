@@ -8,6 +8,7 @@
 #define IVE_OPS
 
 include "mlir/Interfaces/FunctionInterfaces.td"
+include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/CastInterfaces.td"
@@ -46,7 +47,8 @@ def Ive_StructType :
                 "Ive struct type">;
 
 // Provide a definition of the types that are used within the Ive dialect.
-def Ive_Type : AnyTypeOf<[F64Tensor, Ive_StructType]>;
+def Ive_ScalarType : AnyTypeOf<[I1, I32, I64, F64]>;
+def Ive_Type : AnyTypeOf<[F64Tensor, Ive_StructType, Ive_ScalarType]>;
 
 //===----------------------------------------------------------------------===//
 // Ive Operations
@@ -60,48 +62,41 @@ def Ive_Type : AnyTypeOf<[F64Tensor, Ive_StructType]>;
 // Here we provide the mnemonic and a list of traits for the operation. The
 // constant operation is marked as 'Pure' as it is a pure operation
 // and may be removed if dead.
-def ConstantOp : Ive_Op<"constant",
-    [ConstantLike, Pure,
-     DeclareOpInterfaceMethods<ShapeInferenceOpInterface>]> {
-  // Provide a summary and description for this operation. This can be used to
-  // auto-generate documentation of the operations within our dialect.
-  let summary = "constant";
-  let description = [{
-    Constant operation turns a literal into an SSA value. The data is attached
-    to the operation as an attribute. For example:
-
-    ```mlir
-      %0 = ive.constant dense<[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]>
-                        : tensor<2x3xf64>
-    ```
-  }];
-
-  // The constant operation takes an attribute as the only input.
+def ConstantOp : Ive_Op<"constant", [ConstantLike, Pure,
+    DeclareOpInterfaceMethods<ShapeInferenceOpInterface>]> {
+  let summary = "f64 tensor constant";
   let arguments = (ins F64ElementsAttr:$value);
-
-  // The constant operation returns a single value of TensorType.
   let results = (outs F64Tensor);
-
-  // Indicate that the operation has a custom parser and printer method.
   let hasCustomAssemblyFormat = 1;
-
-  // Add custom build methods for the constant operation. These method populates
-  // the `state` that MLIR uses to create operations, i.e. these are used when
-  // using `ConstantOp::create(builder, ...)`.
   let builders = [
-    // Build a constant with a given constant tensor value.
     OpBuilder<(ins "DenseElementsAttr":$value), [{
       build($_builder, $_state, value.getType(), value);
     }]>,
-
-    // Build a constant with a given constant floating-point value.
     OpBuilder<(ins "double":$value)>
   ];
-
-  // Indicate that additional verification for this operation is necessary.
   let hasVerifier = 1;
+  let hasFolder = 1;
+}
 
-  // Set the folder bit so that we can implement constant folders.
+def ScalarConstantOp : Ive_Op<"scalar_constant", [
+    ConstantLike,
+    Pure,
+    AllTypesMatch<["value", "result"]>
+]> {
+  let summary = "integer or floating-point scalar constant";
+
+  let arguments = (ins TypedAttrInterface:$value);
+  let results = (outs Ive_ScalarType:$result);
+
+  let assemblyFormat = "attr-dict $value";
+
+  let builders = [
+    OpBuilder<(ins "::mlir::TypedAttr":$value), [{
+      build($_builder, $_state, value.getType(), value);
+    }]>
+  ];
+
+  let hasVerifier = 1;
   let hasFolder = 1;
 }
 
@@ -157,17 +152,16 @@ def SubOp : Ive_Op<"sub",
 // CmpOp
 //===----------------------------------------------------------------------===//
 
-def CmpOp : Ive_Op<"cmp",
-    [Pure, DeclareOpInterfaceMethods<ShapeInferenceOpInterface>]> {
-  let summary = "element-wise comparison operation";
+def CmpOp : Ive_Op<"cmp", [Pure]> {
+  let summary = "comparison of rank-0 f64 tensors returning i1";
   let description = [{
-    The "cmp" operation performs an element-wise floating-point comparison
-    between two tensors and returns a numeric truth tensor (0.0 or 1.0).
+    The "cmp" operation compares two rank-0 f64 tensors and returns an i1
+    scalar. Higher-rank tensors cannot be used as scalar comparison operands.
     Supported predicates are: "lt", "le", "gt", "ge", "eq", and "ne".
   }];
 
   let arguments = (ins F64Tensor:$lhs, F64Tensor:$rhs, StrAttr:$predicate);
-  let results = (outs F64Tensor);
+  let results = (outs I1:$result);
 
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
@@ -207,7 +201,7 @@ def CastOp : Ive_Op<"cast", [
 //===----------------------------------------------------------------------===//
 
 def FuncOp : Ive_Op<"func", [
-    FunctionOpInterface, IsolatedFromAbove
+    SymbolName, SymbolVisibility, FunctionOpInterface, IsolatedFromAbove
   ]> {
   let summary = "user defined function operation";
   let description = [{
@@ -228,6 +222,7 @@ def FuncOp : Ive_Op<"func", [
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
+    OptionalAttr<StrAttr>:$sym_visibility,
     TypeAttrOf<FunctionType>:$function_type,
     OptionalAttr<DictArrayAttr>:$arg_attrs,
     OptionalAttr<DictArrayAttr>:$res_attrs
@@ -293,7 +288,7 @@ def GenericCallOp : Ive_Op<"generic_call",
 
   // Specialize assembly printing and parsing using a declarative format.
   let assemblyFormat = [{
-    $callee `(` $inputs `)` attr-dict `:` functional-type($inputs, results)
+    $callee `(` $inputs `)` prop-dict attr-dict `:` functional-type($inputs, results)
   }];
 
   // Add custom build methods for the generic call operation.
@@ -366,7 +361,7 @@ def PrintOp : Ive_Op<"print"> {
 
   // The print operation takes an input tensor to print.
   // We also allow a F64MemRef to enable interop during partial lowering.
-  let arguments = (ins AnyTypeOf<[F64Tensor, F64MemRef]>:$input);
+  let arguments = (ins AnyTypeOf<[F64Tensor, F64MemRef, Ive_ScalarType]>:$input);
 
   let assemblyFormat = "$input attr-dict `:` type($input)";
 }
@@ -452,7 +447,7 @@ def IfOp : Ive_Op<"if", [RecursiveMemoryEffects, NoRegionArguments, SingleBlock]
     otherwise executes `else` region.
   }];
 
-  let arguments = (ins F64Tensor:$condition);
+  let arguments = (ins I1:$condition);
   let regions = (region SizedRegion<1>:$thenRegion,
                         MaxSizedRegion<1>:$elseRegion);
 
@@ -461,7 +456,6 @@ def IfOp : Ive_Op<"if", [RecursiveMemoryEffects, NoRegionArguments, SingleBlock]
   ];
 
   let hasCustomAssemblyFormat = 1;
-  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

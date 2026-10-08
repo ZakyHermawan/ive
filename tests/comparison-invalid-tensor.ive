@@ -1,0 +1,7 @@
+# RUN: not %ive %s -emit=mlir 2>&1 | FileCheck %s
+# CHECK: comparison operands must be rank-0 f64 tensors
+def main() {
+  var a = [1, 2];
+  var b = [2, 3];
+  var result = a < b;
+}

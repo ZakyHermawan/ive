@@ -22,9 +22,14 @@ llvm::StringRef Lexer::getId() const {
   return m_identifierStr;
 }
 
-double Lexer::getValue() const {
+double Lexer::getValueDouble() const {
   assert(m_currTok == Token::Number);
-  return m_numVal;
+  return m_numValDouble;
+}
+
+llvm::StringRef Lexer::getNumberSpelling() const {
+  assert(m_currTok == Token::Number);
+  return m_numberSpelling;
 }
 
 Location Lexer::getLastLocation() const { return m_lastLocation; }
@@ -67,6 +72,20 @@ Token Lexer::getTok() {
     m_identifierStr = (char)m_lastChar;
     while (isalnum((m_lastChar = getNextChar())) || m_lastChar == '_') {
       m_identifierStr += (char)m_lastChar;
+    }
+
+    // type name
+    if (m_identifierStr == "i1") {
+      return Token::I1;
+    }
+    if (m_identifierStr == "i32") {
+      return Token::I32;
+    }
+    if (m_identifierStr == "i64") {
+      return Token::I64;
+    }
+    if (m_identifierStr == "f64") {
+      return Token::F64;
     }
 
     if (m_identifierStr == "return") {
@@ -113,14 +132,19 @@ Token Lexer::getTok() {
   }
 
   // Number: [0-9] ([0-9.])*
+  bool alreadyDot = false;
   if (isdigit(m_lastChar)) {
     std::string numStr;
     do {
+      if (m_lastChar == '.') {
+        alreadyDot = true;
+      }
       numStr += m_lastChar;
       m_lastChar = getNextChar();
-    } while (isdigit(m_lastChar) || m_lastChar == '.');
+    } while (isdigit(m_lastChar) || (m_lastChar == '.' && alreadyDot == false));
+    m_numberSpelling = numStr;
+    m_numValDouble = strtod(numStr.c_str(), nullptr);
 
-    m_numVal = strtod(numStr.c_str(), nullptr);
     return Token::Number;
   }
 

@@ -1,0 +1,47 @@
+# RUN: %ive %s -emit=mlir 2>&1 | FileCheck %s --check-prefix=IR
+# RUN: %ive %s -emit=jit | FileCheck %s --check-prefix=JIT
+
+# IR: ive.func private @increment(%{{.*}}: i32) -> i32
+# IR: arith.addi
+# IR: ive.return %{{.*}} : i32
+# IR: arith.subi
+# IR: arith.muli
+# IR: arith.divsi
+# IR: arith.addf
+# IR: arith.cmpi slt
+# IR: ive.generic_call @increment
+# JIT: 12
+# JIT-NEXT: 7
+# JIT-NEXT: 30
+# JIT-NEXT: 3
+# JIT-NEXT: 1.750000
+# JIT-NEXT: 1
+# JIT-NEXT: 11
+# JIT-NEXT: 11
+
+def increment(x : i32) {
+  return x + 1;
+}
+
+def main() {
+  var a : i32 = 10;
+  var sum = a + 2;
+  var difference = a - 3;
+  var product = 3 * a;
+  var quotient = a / 3;
+  var f : f64 = 1.25;
+  var floatSum = f + 0.5;
+  var flag : i1 = a < 12;
+  var result : i32 = increment(10);
+  print(sum);
+  print(difference);
+  print(product);
+  print(quotient);
+  print(floatSum);
+  print(flag);
+  print(result);
+  a = a + 1;
+  if flag {
+    print(a);
+  }
+}

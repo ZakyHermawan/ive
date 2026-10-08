@@ -57,10 +57,12 @@ std::unique_ptr<ReturnExprAST> Parser::parseReturn() {
   return std::make_unique<ReturnExprAST>(std::move(loc), std::move(expr));
 }
 
-std::unique_ptr<ExprAST> Parser::parseNumberExpr() {
+std::unique_ptr<ExprAST> Parser::parseNumberExpr(bool negative) {
   auto loc = m_lexer.getLastLocation();
-  auto result =
-      std::make_unique<NumberExprAST>(std::move(loc), m_lexer.getValue());
+  auto result = std::make_unique<NumberExprAST>(
+      std::move(loc),
+      negative ? -m_lexer.getValueDouble() : m_lexer.getValueDouble(),
+      (negative ? "-" : "") + m_lexer.getNumberSpelling().str());
   m_lexer.consume(Token::Number);
   return std::move(result);
 }
@@ -242,6 +244,11 @@ std::unique_ptr<ExprAST> Parser::parsePrimary() {
     return parseIdentifierExpr();
   case Token::Number:
     return parseNumberExpr();
+  case Token::Minus:
+    m_lexer.consume(Token::Minus);
+    if (m_lexer.getCurrToken() != Token::Number)
+      return parseError<ExprAST>("number", "after unary '-'");
+    return parseNumberExpr(/*negative=*/true);
   case Token::ParentheseOpen:
     return parseParenExpr();
   case Token::SBracketOpen:
@@ -307,7 +314,7 @@ std::unique_ptr<VarType> Parser::parseType() {
   auto type = std::make_unique<VarType>();
 
   while (m_lexer.getCurrToken() == Token::Number) {
-    type->shape.push_back(m_lexer.getValue());
+    type->shape.push_back(m_lexer.getValueDouble());
     m_lexer.getNextToken();
     if (m_lexer.getCurrToken() == Token::Comma)
       m_lexer.getNextToken();
@@ -316,6 +323,28 @@ std::unique_ptr<VarType> Parser::parseType() {
   if (m_lexer.getCurrToken() != Token::Greater)
     return parseError<VarType>(">", "to end type");
   m_lexer.getNextToken(); // eat >
+  return type;
+}
+
+std::unique_ptr<VarType> Parser::parseScalarType() {
+  auto type = std::make_unique<VarType>();
+
+  if (m_lexer.getCurrToken() == Token::I1) {
+    m_lexer.consume(Token::I1);
+    type->typeKind = TypeKind::I1;
+  } else if (m_lexer.getCurrToken() == Token::I32) {
+    m_lexer.consume(Token::I32);
+    type->typeKind = TypeKind::I32;
+  } else if (m_lexer.getCurrToken() == Token::I64) {
+    m_lexer.consume(Token::I64);
+    type->typeKind = TypeKind::I64;
+  } else if (m_lexer.getCurrToken() == Token::F64) {
+    m_lexer.consume(Token::F64);
+    type->typeKind = TypeKind::F64;
+  } else {
+    return parseError<VarType>("scalar type", ": need to be followed by type");
+  }
+
   return type;
 }
 
@@ -400,14 +429,24 @@ Parser::parseVarDeclaration(bool requiresInitializer) {
     type = parseType();
     if (!type)
       return nullptr;
+  } else if (m_lexer.getCurrToken() == Token::Colon) {
+    // Scalar type
+    m_lexer.consume(Token::Colon);
+    type = parseScalarType();
+    if (!type)
+      return nullptr;
   }
   if (!type)
     type = std::make_unique<VarType>();
 
   std::unique_ptr<ExprAST> expr;
   if (requiresInitializer) {
+    if (m_lexer.getCurrToken() != Token::Equal)
+      return parseError<VarDeclExprAST>("=", "before variable initializer");
     m_lexer.consume(Token::Equal);
     expr = parseExpression();
+    if (!expr)
+      return nullptr;
   }
   return std::make_unique<VarDeclExprAST>(std::move(loc), std::move(id),
                                           std::move(*type), std::move(expr));
@@ -520,6 +559,14 @@ std::unique_ptr<PrototypeAST> Parser::parsePrototype() {
       } else {
         // Otherwise, we just parsed the name.
         name = std::move(nameOrType);
+      }
+
+      if (m_lexer.getCurrToken() == Token::Colon) {
+        m_lexer.consume(Token::Colon);
+        auto scalarType = parseScalarType();
+        if (!scalarType)
+          return nullptr;
+        type = *scalarType;
       }
 
       args.push_back(

@@ -65,11 +65,35 @@ public:
   matchAndRewrite(ive::PrintOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     auto *context = rewriter.getContext();
+    auto loc = op->getLoc();
+    ModuleOp parentModule = op->getParentOfType<ModuleOp>();
+    if (!llvm::isa<MemRefType>(op.getInput().getType())) {
+      Value scalar = adaptor.getInput();
+      StringRef format;
+      StringRef globalName;
+      if (scalar.getType().isF64()) {
+        format = StringRef("%f\n\0", 4);
+        globalName = "scalar_f64_format";
+      } else if (scalar.getType().isInteger(64)) {
+        format = StringRef("%lld\n\0", 6);
+        globalName = "scalar_i64_format";
+      } else {
+        if (scalar.getType().isInteger(1))
+          scalar = arith::ExtUIOp::create(rewriter, loc, rewriter.getI32Type(),
+                                          scalar);
+        format = StringRef("%d\n\0", 4);
+        globalName = "scalar_i32_format";
+      }
+      auto printfRef = getOrInsertPrintf(rewriter, parentModule);
+      Value formatValue = getOrCreateGlobalString(loc, rewriter, globalName,
+                                                  format, parentModule);
+      LLVM::CallOp::create(rewriter, loc, getPrintfType(context), printfRef,
+                           ArrayRef<Value>({formatValue, scalar}));
+      rewriter.eraseOp(op);
+      return success();
+    }
     auto memRefType = llvm::cast<MemRefType>((*op->operand_type_begin()));
     auto memRefShape = memRefType.getShape();
-    auto loc = op->getLoc();
-
-    ModuleOp parentModule = op->getParentOfType<ModuleOp>();
 
     // Get a symbol reference to the printf function, inserting it if necessary.
     auto printfRef = getOrInsertPrintf(rewriter, parentModule);
@@ -173,7 +197,7 @@ private:
     // Get the pointer to the first character in the global string.
     Value globalPtr = LLVM::AddressOfOp::create(builder, loc, global);
     Value cst0 = LLVM::ConstantOp::create(builder, loc, builder.getI64Type(),
-                                          builder.getIndexAttr(0));
+                                          builder.getI64IntegerAttr(0));
     return LLVM::GEPOp::create(
         builder, loc, LLVM::LLVMPointerType::get(builder.getContext()),
         global.getType(), globalPtr, ArrayRef<Value>({cst0, cst0}));

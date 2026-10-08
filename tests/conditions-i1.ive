@@ -1,0 +1,44 @@
+# RUN: %ive %s -emit=mlir 2>&1 | FileCheck %s --check-prefix=IR
+# RUN: %ive %s -emit=mlir 2> %t.mlir
+# RUN: %ive %t.mlir -emit=jit | FileCheck %s --check-prefix=JIT
+# RUN: %ive %s -emit=jit | FileCheck %s --check-prefix=JIT
+# IR: arith.cmpi slt
+# IR: arith.cmpf oge
+# IR: ive.if
+# IR: ive.cmp %{{.*}}, %{{.*}} {predicate = "lt"} : (tensor<f64>, tensor<f64>) -> i1
+# JIT: 0
+# JIT-NEXT: 3
+# JIT-NEXT: 1.250000
+# JIT-NEXT: 1
+# JIT-NEXT: 5.000000
+# JIT-NEXT: 1
+def main() {
+  var count : i32 = 3;
+  var flag : i1 = count < 4;
+  var f : f64 = 1.25;
+  var result : i1 = f ge 2.0;
+  print(result);
+  if (flag) {
+    print(count);
+  } else {
+    print(0);
+  }
+  if (result) {
+    print(0);
+  } else {
+    print(f);
+  }
+  var zero : i1 = 0;
+  if (zero) {
+    print(0);
+  } else {
+    print(flag);
+  }
+  var legacy = 5;
+  var legacyFlag : i1 = legacy < 6;
+  if (legacyFlag) {
+    print(legacy);
+  }
+  var nested : i1 = (legacy < 6) eq 1;
+  print(nested);
+}

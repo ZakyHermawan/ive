@@ -62,6 +62,12 @@ enum class Token : int {
   Le = -13,
   Gt = -14,
   Ge = -15,
+
+  // type keyword
+  I1 = -17,
+  I32 = -18,
+  I64 = -19,
+  F64 = -20
 };
 
 /// The Lexer is an abstract base class providing all the facilities that the
@@ -91,7 +97,8 @@ public:
   llvm::StringRef getId() const;
 
   /// Return the current number (prereq: getCurToken() == Token::Number)
-  double getValue() const;
+  double getValueDouble() const;
+  llvm::StringRef getNumberSpelling() const;
 
   /// Return the location for the beginning of the current token.
   Location getLastLocation() const;
@@ -126,7 +133,8 @@ private:
   std::string m_identifierStr;
 
   /// If the current Token is a number, this contains the value.
-  double m_numVal = 0;
+  double m_numValDouble = 0.0;
+  std::string m_numberSpelling;
 
   /// The last value returned by getNextChar(). We need to keep it around as we
   /// always need to read ahead one character to decide when to end a token and

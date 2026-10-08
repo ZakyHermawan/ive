@@ -8,6 +8,7 @@
 #pragma once
 
 #include "ive/Lexer.hpp"
+#include "ive/Types.hpp"
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/StringRef.h>
@@ -21,6 +22,7 @@ namespace ive {
 
 /// A variable type with either name or shape information.
 struct VarType {
+  TypeKind typeKind = TypeKind::Tensor;
   std::string name;
   std::vector<int64_t> shape;
 };
@@ -61,13 +63,16 @@ using ExprASTList = std::vector<std::unique_ptr<ExprAST>>;
 
 /// Expression class for numeric literals like "1.0".
 class NumberExprAST : public ExprAST {
-  double val;
+  double valDouble;
+  std::string spelling;
 
 public:
-  NumberExprAST(Location loc, double val)
-      : ExprAST(Expr_Num, std::move(loc)), val(val) {}
+  NumberExprAST(Location loc, double val, std::string spelling)
+      : ExprAST(Expr_Num, std::move(loc)), valDouble(val),
+        spelling(std::move(spelling)) {}
 
-  double getValue() { return val; }
+  double getValueDouble() { return valDouble; }
+  llvm::StringRef getSpelling() const { return spelling; }
 
   /// LLVM style RTTI
   static bool classof(const ExprAST *c) { return c->getKind() == Expr_Num; }
@@ -126,18 +131,18 @@ public:
 /// Expression class for defining a variable.
 class VarDeclExprAST : public ExprAST {
   std::string name;
-  VarType type;
+  VarType varType;
   std::unique_ptr<ExprAST> initVal;
 
 public:
   VarDeclExprAST(Location loc, llvm::StringRef name, VarType type,
                  std::unique_ptr<ExprAST> initVal = nullptr)
       : ExprAST(Expr_VarDecl, std::move(loc)), name(name),
-        type(std::move(type)), initVal(std::move(initVal)) {}
+        varType(std::move(type)), initVal(std::move(initVal)) {}
 
   llvm::StringRef getName() { return name; }
   ExprAST *getInitVal() { return initVal.get(); }
-  const VarType &getType() { return type; }
+  const VarType &getType() { return varType; }
 
   /// LLVM style RTTI
   static bool classof(const ExprAST *c) { return c->getKind() == Expr_VarDecl; }

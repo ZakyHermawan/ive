@@ -1,14 +1,14 @@
 def main() {
   var a = 1;
   var b = 2;
-  if a {
+  if (a < b) {
     print(a);
   }
   else {
     print(b);
   }
 
-  if (b) {
+  if (b > a) {
     print(b);
   }
 }

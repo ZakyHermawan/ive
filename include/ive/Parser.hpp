@@ -40,7 +40,7 @@ private:
 
   /// Parse a literal number.
   /// numberexpr ::= number
-  std::unique_ptr<ExprAST> parseNumberExpr();
+  std::unique_ptr<ExprAST> parseNumberExpr(bool negative = false);
 
   /// Parse a literal array expression.
   /// tensorLiteral ::= [ literalList ] | number
@@ -80,9 +80,11 @@ private:
   /// expression::= primary binop rhs
   std::unique_ptr<ExprAST> parseExpression();
 
-  /// type ::= < shape_list >
+  /// type ::= TypeName | < shape_list >
   /// shape_list ::= num | num , shape_list
   std::unique_ptr<VarType> parseType();
+
+  std::unique_ptr<VarType> parseScalarType();
 
   /// Parse either a variable declaration or a call expression.
   std::unique_ptr<ExprAST> parseDeclarationOrCallExpr();

@@ -1,0 +1,8 @@
+# RUN: not %ive %s -emit=mlir 2>&1 | FileCheck %s
+# CHECK: if condition must have type i1, got 'i32'
+def main() {
+  var count : i32 = 1;
+  if (count) {
+    print(count);
+  }
+}

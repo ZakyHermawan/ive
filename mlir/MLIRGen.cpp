@@ -9,9 +9,11 @@
 #include "ive/AST.hpp"
 #include "ive/Dialect.hpp"
 #include "ive/Lexer.hpp"
+#include "ive/Types.hpp"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/LogicalResult.h"
 
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/Value.h>
@@ -60,7 +62,9 @@ namespace {
 /// analysis and transformation based on these high level semantics.
 class MLIRGenImpl {
 public:
-  MLIRGenImpl(mlir::MLIRContext &context) : builder(&context) {}
+  MLIRGenImpl(mlir::MLIRContext &context) : builder(&context) {
+    context.getOrLoadDialect<mlir::arith::ArithDialect>();
+  }
 
   /// Public API: convert the AST for a Ive module (source file) to an MLIR
   /// Module operation.
@@ -74,7 +78,7 @@ public:
         mlir::ive::FuncOp func = mlirGen(*funcAST);
         if (!func)
           return nullptr;
-        functionMap.insert({func.getName(), func});
+        functionMap.insert({func.getSymName(), func});
       } else if (StructAST *str = llvm::dyn_cast<StructAST>(record.get())) {
         if (failed(mlirGen(*str)))
           return nullptr;
@@ -172,6 +176,10 @@ private:
           location, "error: if expression need a conditional statement");
     }
 
+    if (!cond.getType().isInteger(1))
+      return mlir::emitError(location)
+             << "if condition must have type i1, got " << cond.getType();
+
     auto thenExpr = ifExpr.getThen();
     auto elseExpr = ifExpr.getElse();
 
@@ -217,9 +225,9 @@ private:
     return mlir::success();
   }
 
-  static std::optional<double> getConstNumberExpr(ExprAST *expr) {
+  static std::optional<double> getConstNumberDoubleExpr(ExprAST *expr) {
     if (auto *number = llvm::dyn_cast_or_null<NumberExprAST>(expr))
-      return number->getValue();
+      return number->getValueDouble();
     return std::nullopt;
   }
 
@@ -264,29 +272,23 @@ private:
                              "variable");
     }
 
-    // If loop bounds and step are compile-time constants, execute the loop
-    // structure at codegen time to preserve assignment semantics naturally.
-    auto initConst = getConstNumberExpr(iterVar->getInitVal());
-    auto upperConst = getConstNumberExpr(cond->getRHS());
-    auto stepConst = getConstNumberExpr(forExpr.getStep());
+    // Preserve the existing assignment semantics for constant-bound loops.
+    auto initConst = getConstNumberDoubleExpr(iterVar->getInitVal());
+    auto upperConst = getConstNumberDoubleExpr(cond->getRHS());
+    auto stepConst = getConstNumberDoubleExpr(forExpr.getStep());
     if (initConst && upperConst && stepConst && *stepConst != 0.0) {
       constexpr int64_t kMaxUnrolledIterations = 1000000;
       int64_t iterCount = 0;
       double iter = *initConst;
-
       while (evalForPredicate(cond->getOp(), iter, *upperConst)) {
-        if (iterCount++ >= kMaxUnrolledIterations) {
-          return mlir::emitError(location,
-                                 "error: for-loop exceeded maximum unrolled "
-                                 "iterations (1000000)");
-        }
-
+        if (iterCount++ >= kMaxUnrolledIterations)
+          return mlir::emitError(
+              location,
+              "error: for-loop exceeded maximum unrolled iterations (1000000)");
         mlir::Value iterValue = ConstantOp::create(builder, location, iter);
         symbolTable.insert(iterVar->getName(), {iterValue, iterVar});
-
         if (failed(mlirGenNoScope(*forExpr.getBody())))
           return mlir::failure();
-
         iter += *stepConst;
       }
       return mlir::success();
@@ -495,8 +497,63 @@ private:
     return it - structVars.begin();
   }
 
+  static bool isScalarType(mlir::Type type) {
+    return type && (type.isInteger(1) || type.isInteger(32) ||
+                    type.isInteger(64) || type.isF64());
+  }
+
+  static bool isComparison(Token op) {
+    return op == Token::Eq || op == Token::Ne || op == Token::Less ||
+           op == Token::Greater || op == Token::Lt || op == Token::Le ||
+           op == Token::Gt || op == Token::Ge;
+  }
+
+  static bool hasFloatLiteral(ExprAST &expr) {
+    if (auto *number = dyn_cast<NumberExprAST>(&expr))
+      return number->getSpelling().contains('.');
+    if (auto *binary = dyn_cast<BinaryExprAST>(&expr))
+      return hasFloatLiteral(*binary->getLHS()) ||
+             hasFloatLiteral(*binary->getRHS());
+    return false;
+  }
+
+  // Find an operand context from a variable or a previously defined function.
+  mlir::Type getExprType(ExprAST &expr) {
+    if (auto *variable = dyn_cast<VariableExprAST>(&expr)) {
+      auto value = symbolTable.lookup(variable->getName()).first;
+      if (value)
+        return value.getType();
+    } else if (auto *call = dyn_cast<CallExprAST>(&expr)) {
+      auto it = functionMap.find(call->getCallee());
+      if (it != functionMap.end()) {
+        auto results = it->second.getFunctionType().getResults();
+        if (results.size() == 1)
+          return results.front();
+      }
+    } else if (auto *binary = dyn_cast<BinaryExprAST>(&expr)) {
+      if (isComparison(binary->getOp()))
+        return builder.getI1Type();
+      auto type = getExprType(*binary->getLHS());
+      if (!type)
+        type = getExprType(*binary->getRHS());
+      return type;
+    }
+    return {};
+  }
+
   /// Emit a binary operation
-  mlir::Value mlirGen(BinaryExprAST &binop) {
+  mlir::Value mlirGen(BinaryExprAST &binop, mlir::Type expectedType = {}) {
+    auto operandType = getExprType(*binop.getLHS());
+    if (!operandType)
+      operandType = getExprType(*binop.getRHS());
+    if (!operandType) {
+      operandType = expectedType;
+      if (expectedType && isComparison(binop.getOp()))
+        operandType = hasFloatLiteral(binop) ? mlir::Type(builder.getF64Type())
+                                             : mlir::Type(builder.getI64Type());
+    }
+    if (!isScalarType(operandType))
+      operandType = {};
     // First emit the operations for each side of the operation before emitting
     // the operation itself. For example if the expression is `a + foo(a)`
     // 1) First it will visiting the LHS, which will return a reference to the
@@ -508,7 +565,7 @@ private:
     //    and the result value is returned. If an error occurs we get a nullptr
     //    and propagate.
     //
-    mlir::Value lhs = mlirGen(*binop.getLHS());
+    mlir::Value lhs = mlirGen(*binop.getLHS(), operandType);
     if (!lhs)
       return nullptr;
     auto location = loc(binop.loc());
@@ -524,9 +581,86 @@ private:
     }
 
     // Otherwise, this is a normal binary op.
-    mlir::Value rhs = mlirGen(*binop.getRHS());
+    mlir::Value rhs = mlirGen(*binop.getRHS(), operandType);
     if (!rhs)
       return nullptr;
+
+    if (isScalarType(lhs.getType()) || isScalarType(rhs.getType())) {
+      if (lhs.getType() != rhs.getType()) {
+        emitError(location, "scalar operands must have the same type");
+        return nullptr;
+      }
+      using namespace mlir::arith;
+      bool floating = lhs.getType().isF64();
+      switch (binop.getOp()) {
+      case Token::Plus:
+        if (floating)
+          return AddFOp::create(builder, location, lhs, rhs);
+        return AddIOp::create(builder, location, lhs, rhs);
+      case Token::Minus:
+        if (floating)
+          return SubFOp::create(builder, location, lhs, rhs);
+        return SubIOp::create(builder, location, lhs, rhs);
+      case Token::Star:
+        if (floating)
+          return MulFOp::create(builder, location, lhs, rhs);
+        return MulIOp::create(builder, location, lhs, rhs);
+      case Token::Slash:
+        if (floating)
+          return DivFOp::create(builder, location, lhs, rhs);
+        if (lhs.getType().isInteger(1))
+          return DivUIOp::create(builder, location, lhs, rhs);
+        return DivSIOp::create(builder, location, lhs, rhs);
+      default:
+        break;
+      }
+      CmpIPredicate ip;
+      CmpFPredicate fp;
+      switch (binop.getOp()) {
+      case Token::Eq:
+        ip = CmpIPredicate::eq;
+        fp = CmpFPredicate::OEQ;
+        break;
+      case Token::Ne:
+        ip = CmpIPredicate::ne;
+        fp = CmpFPredicate::UNE;
+        break;
+      case Token::Less:
+      case Token::Lt:
+        ip = CmpIPredicate::slt;
+        fp = CmpFPredicate::OLT;
+        break;
+      case Token::Le:
+        ip = CmpIPredicate::sle;
+        fp = CmpFPredicate::OLE;
+        break;
+      case Token::Greater:
+      case Token::Gt:
+        ip = CmpIPredicate::sgt;
+        fp = CmpFPredicate::OGT;
+        break;
+      case Token::Ge:
+        ip = CmpIPredicate::sge;
+        fp = CmpFPredicate::OGE;
+        break;
+      default:
+        emitError(location, "unsupported scalar binary operator");
+        return nullptr;
+      }
+      if (floating)
+        return CmpFOp::create(builder, location, fp, lhs, rhs);
+      if (lhs.getType().isInteger(1)) {
+        if (ip == CmpIPredicate::slt)
+          ip = CmpIPredicate::ult;
+        if (ip == CmpIPredicate::sle)
+          ip = CmpIPredicate::ule;
+        if (ip == CmpIPredicate::sgt)
+          ip = CmpIPredicate::ugt;
+        if (ip == CmpIPredicate::sge)
+          ip = CmpIPredicate::uge;
+      }
+      return CmpIOp::create(builder, location, ip, lhs, rhs);
+    }
 
     // Derive the operation name from the binary operator. At the moment we only
     // support '+' and '*'.
@@ -646,7 +780,7 @@ private:
     // This is the actual attribute that holds the list of values for this
     // tensor literal.
     return mlir::DenseElementsAttr::get(dataType,
-                                        llvm::ArrayRef(lit.getValue()));
+                                        llvm::ArrayRef(lit.getValueDouble()));
   }
   /// Emit a constant for a struct literal. It will be emitted as an array of
   /// other literals in an Attribute attached to a `ive.struct_constant`
@@ -716,7 +850,7 @@ private:
     }
 
     assert(isa<NumberExprAST>(expr) && "expected literal or number expr");
-    data.push_back(cast<NumberExprAST>(expr).getValue());
+    data.push_back(cast<NumberExprAST>(expr).getValueDouble());
   }
 
   /// Emit a call expression. It emits specific operations for the `transpose`
@@ -725,12 +859,41 @@ private:
     llvm::StringRef callee = call.getCallee();
     auto location = loc(call.loc());
 
-    // Codegen the operands first.
+    mlir::ive::FuncOp calledFunc;
+    if (callee != "transpose") {
+      auto it = functionMap.find(callee);
+      if (it == functionMap.end()) {
+        emitError(location)
+            << "no defined function found for '" << callee << "'";
+        return nullptr;
+      }
+      calledFunc = it->second;
+      if (calledFunc.getFunctionType().getNumInputs() !=
+              call.getArgs().size() ||
+          calledFunc.getFunctionType().getNumResults() != 1) {
+        emitError(location,
+                  "function call requires matching arguments and one result");
+        return nullptr;
+      }
+    }
+
+    // A typed parameter provides the context for literal arguments.
     SmallVector<mlir::Value, 4> operands;
     for (auto &expr : call.getArgs()) {
-      auto arg = mlirGen(*expr);
+      mlir::Type expectedType;
+      if (calledFunc) {
+        auto parameterType =
+            calledFunc.getFunctionType().getInput(operands.size());
+        if (isScalarType(parameterType))
+          expectedType = parameterType;
+      }
+      auto arg = mlirGen(*expr, expectedType);
       if (!arg)
         return nullptr;
+      if (expectedType && arg.getType() != expectedType) {
+        emitError(location, "scalar function argument type mismatch");
+        return nullptr;
+      }
       operands.push_back(arg);
     }
 
@@ -748,12 +911,6 @@ private:
     // Otherwise this is a call to a user-defined function. Calls to
     // user-defined functions are mapped to a custom call that takes the callee
     // name as an attribute.
-    auto calledFuncIt = functionMap.find(callee);
-    if (calledFuncIt == functionMap.end()) {
-      emitError(location) << "no defined function found for '" << callee << "'";
-      return nullptr;
-    }
-    mlir::ive::FuncOp calledFunc = calledFuncIt->second;
     return GenericCallOp::create(builder, location,
                                  calledFunc.getFunctionType().getResult(0),
                                  callee, operands);
@@ -779,24 +936,60 @@ private:
       return nullptr;
     }
 
-    mlir::Value value = mlirGen(*assign.getValue());
+    auto expectedType = isScalarType(bound.first.getType())
+                            ? bound.first.getType()
+                            : mlir::Type{};
+    mlir::Value value = mlirGen(*assign.getValue(), expectedType);
     if (!value)
       return nullptr;
 
+    if (expectedType && value.getType() != expectedType) {
+      emitError(loc(assign.loc()), "scalar assignment type mismatch");
+      return nullptr;
+    }
     symbolTable.insert(assign.getName(), {value, bound.second});
     return value;
   }
 
   /// Emit a constant for a single number (FIXME: semantic? broadcast?)
-  mlir::Value mlirGen(NumberExprAST &num) {
-    return ConstantOp::create(builder, loc(num.loc()), num.getValue());
+  mlir::Value mlirGen(NumberExprAST &num, mlir::Type expectedType = {}) {
+    auto location = loc(num.loc());
+    if (!expectedType)
+      return ConstantOp::create(builder, location, num.getValueDouble());
+    if (expectedType.isF64())
+      return ScalarConstantOp::create(
+          builder, location, builder.getF64FloatAttr(num.getValueDouble()));
+
+    auto integerType = llvm::cast<mlir::IntegerType>(expectedType);
+    llvm::StringRef digits = num.getSpelling();
+    bool negative = digits.consume_front("-");
+    llvm::APInt magnitude;
+    if (digits.getAsInteger(10, magnitude)) {
+      emitError(location, "integer scalar requires an integer literal");
+      return nullptr;
+    }
+    unsigned width = integerType.getWidth();
+    // Use an extra sign bit so range checking never truncates the literal.
+    auto integer =
+        magnitude.zext(std::max(width + 1, magnitude.getBitWidth() + 1));
+    if (negative)
+      integer = -integer;
+    if ((width == 1 && (negative || magnitude.getActiveBits() > 1)) ||
+        (width != 1 && !integer.isSignedIntN(width))) {
+      emitError(location) << "integer literal is out of range for "
+                          << expectedType;
+      return nullptr;
+    }
+    return ScalarConstantOp::create(
+        builder, location,
+        builder.getIntegerAttr(integerType, integer.trunc(width)));
   }
 
   /// Dispatch codegen for the right expression subclass using RTTI.
-  mlir::Value mlirGen(ExprAST &expr) {
+  mlir::Value mlirGen(ExprAST &expr, mlir::Type expectedType = {}) {
     switch (expr.getKind()) {
     case ive::ExprAST::Expr_BinOp:
-      return mlirGen(cast<BinaryExprAST>(expr));
+      return mlirGen(cast<BinaryExprAST>(expr), expectedType);
     case ive::ExprAST::Expr_Var:
       return mlirGen(cast<VariableExprAST>(expr));
     case ive::ExprAST::Expr_Literal:
@@ -806,7 +999,7 @@ private:
     case ive::ExprAST::Expr_Call:
       return mlirGen(cast<CallExprAST>(expr));
     case ive::ExprAST::Expr_Num:
-      return mlirGen(cast<NumberExprAST>(expr));
+      return mlirGen(cast<NumberExprAST>(expr), expectedType);
     case ive::ExprAST::Expr_Assign:
       return mlirGen(cast<AssignExprAST>(expr));
     default:
@@ -829,11 +1022,20 @@ private:
       return nullptr;
     }
 
-    mlir::Value value = mlirGen(*init);
+    auto expectedType = vardecl.getType().typeKind == TypeKind::Tensor
+                            ? mlir::Type{}
+                            : getType(vardecl.getType(), vardecl.loc());
+    mlir::Value value = mlirGen(*init, expectedType);
     if (!value)
       return nullptr;
 
     // Handle the case where we are initializing a struct value.
+    if (expectedType && value.getType() != expectedType) {
+      emitError(loc(vardecl.loc()))
+          << "scalar initializer has type " << value.getType() << ", expected "
+          << expectedType;
+      return nullptr;
+    }
     VarType varType = vardecl.getType();
     if (!varType.name.empty()) {
       // Check that the initializer type is the same as the variable
@@ -885,7 +1087,7 @@ private:
       // Print statement
       if (auto *print = dyn_cast<PrintExprAST>(expr.get())) {
         if (mlir::failed(mlirGen(*print)))
-          return mlir::success();
+          return mlir::failure();
         continue;
       }
       // If statement
@@ -931,7 +1133,7 @@ private:
       }
       if (auto *print = dyn_cast<PrintExprAST>(expr.get())) {
         if (mlir::failed(mlirGen(*print)))
-          return mlir::success();
+          return mlir::failure();
         continue;
       }
       if (auto *ifExpr = dyn_cast<IfExprAST>(expr.get())) {
@@ -965,6 +1167,18 @@ private:
   /// Build an MLIR type from a Ive AST variable type (forward to the generic
   /// getType above for non-struct types).
   mlir::Type getType(const VarType &type, const Location &location) {
+    switch (type.typeKind) {
+    case TypeKind::I1:
+      return builder.getI1Type();
+    case TypeKind::I32:
+      return builder.getI32Type();
+    case TypeKind::I64:
+      return builder.getI64Type();
+    case TypeKind::F64:
+      return builder.getF64Type();
+    case TypeKind::Tensor:
+      break;
+    }
     if (!type.name.empty()) {
       auto it = structMap.find(type.name);
       if (it == structMap.end()) {

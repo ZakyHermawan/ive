@@ -27,6 +27,8 @@ namespace {
 /// Fold constants.
 OpFoldResult ConstantOp::fold(FoldAdaptor adaptor) { return getValue(); }
 
+OpFoldResult ScalarConstantOp::fold(FoldAdaptor adaptor) { return getValue(); }
+
 /// Fold struct constants.
 OpFoldResult StructConstantOp::fold(FoldAdaptor adaptor) { return getValue(); }
 

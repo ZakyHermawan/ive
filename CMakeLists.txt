@@ -104,4 +104,5 @@ target_link_libraries(ive
     MLIRSideEffectInterfaces
     MLIRTargetLLVMIRExport
     MLIRTransforms
+    LLVMOrcJIT
 )

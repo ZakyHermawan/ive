@@ -1,0 +1,5 @@
+# RUN: not %ive %s -emit=mlir 2>&1 | FileCheck %s
+# CHECK: integer literal is out of range for 'i1'
+def main() {
+  var flag : i1 = 2;
+}

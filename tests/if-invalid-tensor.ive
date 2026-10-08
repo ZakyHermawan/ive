@@ -1,0 +1,7 @@
+# RUN: not %ive %s -emit=mlir 2>&1 | FileCheck %s
+# CHECK: if condition must have type i1, got 'tensor<f64>'
+def main() {
+  if (1) {
+    print(1);
+  }
+}

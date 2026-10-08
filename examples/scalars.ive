@@ -1,0 +1,10 @@
+def main() {
+  var a : i1 = 1;
+  var b : i32 = 42;
+  var c : i64 = 9007199254740993;
+  var d : f64 = 0.1;
+  print(a);
+  print(b);
+  print(c);
+  print(d);
+}

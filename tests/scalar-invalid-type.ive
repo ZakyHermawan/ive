@@ -1,0 +1,6 @@
+# RUN: not %ive %s -emit=mlir 2>&1 | FileCheck %s
+# CHECK: scalar initializer has type 'i64', expected 'i32'
+def main() {
+  var wide : i64 = 42;
+  var narrow : i32 = wide;
+}

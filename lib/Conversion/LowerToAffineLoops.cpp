@@ -156,16 +156,11 @@ struct CmpOpLowering : public OpConversionPattern<ive::CmpOp> {
       return rewriter.notifyMatchFailure(op, "invalid cmp predicate");
     }
 
-    lowerOpToLoops(op, rewriter, [&](OpBuilder &builder, ValueRange loopIvs) {
-      auto loadedLhs =
-          affine::AffineLoadOp::create(builder, loc, adaptor.getLhs(), loopIvs);
-      auto loadedRhs =
-          affine::AffineLoadOp::create(builder, loc, adaptor.getRhs(), loopIvs);
-      auto cmp =
-          arith::CmpFOp::create(builder, loc, pred, loadedLhs, loadedRhs);
-      return arith::UIToFPOp::create(builder, loc, builder.getF64Type(),
-                                     cmp.getResult());
-    });
+    auto loadedLhs = affine::AffineLoadOp::create(
+        rewriter, loc, adaptor.getLhs(), ValueRange{});
+    auto loadedRhs = affine::AffineLoadOp::create(
+        rewriter, loc, adaptor.getRhs(), ValueRange{});
+    rewriter.replaceOpWithNewOp<arith::CmpFOp>(op, pred, loadedLhs, loadedRhs);
     return success();
   }
 };
@@ -173,6 +168,19 @@ struct CmpOpLowering : public OpConversionPattern<ive::CmpOp> {
 //===----------------------------------------------------------------------===//
 // IveToAffine Conversion Patterns: Constant operations
 //===----------------------------------------------------------------------===//
+
+struct ScalarConstantOpLowering
+    : public OpConversionPattern<ive::ScalarConstantOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ive::ScalarConstantOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    rewriter.replaceOpWithNewOp<arith::ConstantOp>(op, op.getType(),
+                                                   op.getValue());
+    return success();
+  }
+};
 
 struct ConstantOpLowering : public OpConversionPattern<ive::ConstantOp> {
   using OpConversionPattern<ive::ConstantOp>::OpConversionPattern;
@@ -251,7 +259,7 @@ struct FuncOpLowering : public OpConversionPattern<ive::FuncOp> {
                   ConversionPatternRewriter &rewriter) const final {
     // We only lower the main function as we expect that all other functions
     // have been inlined.
-    if (op.getName() != "main")
+    if (op.getSymName() != "main")
       return failure();
 
     // Verify that the given main has no inputs and results.
@@ -262,8 +270,8 @@ struct FuncOpLowering : public OpConversionPattern<ive::FuncOp> {
     }
 
     // Create a new non-ive function, with the same region.
-    auto func = mlir::func::FuncOp::create(rewriter, op.getLoc(), op.getName(),
-                                           op.getFunctionType());
+    auto func = mlir::func::FuncOp::create(
+        rewriter, op.getLoc(), op.getSymName(), op.getFunctionType());
     rewriter.inlineRegionBefore(op.getRegion(), func.getBody(), func.end());
     rewriter.eraseOp(op);
     return success();
@@ -421,10 +429,12 @@ void IveToAffineLoweringPass::runOnOperation() {
   // Now that the conversion target has been defined, we just need to provide
   // the set of patterns that will lower the Ive operations.
   RewritePatternSet patterns(&getContext());
-  patterns.add<AddOpLowering, SubOpLowering, ConstantOpLowering, FuncOpLowering,
-               MulOpLowering, DivOpLowering, CmpOpLowering, PrintOpLowering,
-               ReturnOpLowering, TransposeOpLowering, TensorSplatOpLowering,
-               TensorExtractOpLowering>(&getContext());
+  patterns
+      .add<AddOpLowering, SubOpLowering, ConstantOpLowering,
+           ScalarConstantOpLowering, FuncOpLowering, MulOpLowering,
+           DivOpLowering, CmpOpLowering, PrintOpLowering, ReturnOpLowering,
+           TransposeOpLowering, TensorSplatOpLowering, TensorExtractOpLowering>(
+          &getContext());
 
   // With the target and rewrite patterns defined, we can now attempt the
   // conversion. The conversion will signal failure if any of our `illegal`

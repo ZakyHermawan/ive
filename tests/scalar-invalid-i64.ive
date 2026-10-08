@@ -1,0 +1,5 @@
+# RUN: not %ive %s -emit=mlir 2>&1 | FileCheck %s
+# CHECK: integer literal is out of range for 'i64'
+def main() {
+  var value : i64 = 9223372036854775808;
+}
